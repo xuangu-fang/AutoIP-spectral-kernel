@@ -8,26 +8,22 @@ import jax.numpy as jnp
 from kernel_matrix import Kernel_matrix
 from jax import vmap
 import pandas as pd
-from jaxopt import LBFGS 
-import time
 import tqdm
-import os
-
 np.random.seed(0)
 random.seed(0)
 
 
 class GPRLatent:
 
-    #equation: u_{xx}  = f(x)
+    #K: u_{xx} + (k*\pi)^2\sin(k*\pi*x) = 0
     #Xind: the indices of X_col that corresponds to training points, i.e., boundary points
     #y: training outputs 
     #Xcol: collocation points 
-    def __init__(self, Xind, y, X_col, src_col, jitter, X_test, Y_test,trick_paras =None):
+    def __init__(self, k, Xind, y, X_col, jitter, X_test, Y_test,trick_paras =None):
+        self.k_val = k
         self.Xind = Xind
         self.y = y
         self.X_col = X_col
-        self.src_col = src_col
         self.jitter = jitter
         #X is the 1st and the last point in X_col
         self.X_con = X_col
@@ -35,12 +31,10 @@ class GPRLatent:
         #self.N_col = self.X_col.shape[0]
         self.N_con = self.X_con.shape[0]
         self.cov_func = SM_kernel_u_1d()
-        # self.cov_func = Periodic_kernel_u_1d()
 
         lr = trick_paras['lr'] if trick_paras is not None else 0.01
 
         self.optimizer = optax.adam(lr)
-        # self.optimizer = optax.adamaxw(0.01)
 
         self.trick_paras = trick_paras
 
@@ -59,8 +53,8 @@ class GPRLatent:
     def loss(self, params, key):
         u = params['u'] #function values at the collocation points
 
-
         u = u.sum(axis=1).reshape(-1,1) #sum over trick
+
 
         log_v = params['log_v'] #inverse variance for eq ll 
         log_tau = params['log_tau'] #inverse variance for boundary ll
@@ -77,11 +71,9 @@ class GPRLatent:
         #equation
         K_dxx1 = vmap(self.cov_func.DD_x1_kappa, (0, 0, None))(X1_p, X2_p, kernel_paras).reshape(self.N_con, self.N_con)
         u_xx = jnp.matmul(K_dxx1, Kinv_u)
-        eq_ll = 0.5 * self.N_con * log_v - 0.5 * jnp.exp(log_v) * jnp.sum(jnp.square( u_xx.flatten() - self.src_col.flatten() ))
+        eq_ll = 0.5 * self.N_con * log_v - 0.5 * jnp.exp(log_v) * jnp.sum(jnp.square( u_xx.flatten() + jnp.square(self.k_val*jnp.pi)*jnp.sin(self.k_val*jnp.pi*self.X_con).flatten() ))
         log_joint = log_prior + log_boundary_ll + eq_ll
         return -log_joint
-
-
 
     @partial(jit, static_argnums=(0,))
     def step(self, params, opt_state, key):
@@ -96,7 +88,7 @@ class GPRLatent:
         ker_paras = params['kernel_paras']
         u = params['u']
 
-        u = u.sum(axis=1).reshape(-1,1) #sum over trick
+        u = u.sum(axis=1).reshape(-1,1) #sum over trick\
 
         x_p = jnp.tile(self.X_con.flatten(), (self.N_con, 1)).T
         X1_p = x_p.flatten()
@@ -115,13 +107,14 @@ class GPRLatent:
 
     def train(self, nepoch):
         key = jax.random.PRNGKey(0)
+        #Q = 50 
         Q = self.trick_paras['Q'] if self.trick_paras is not None else 10
-        #Q = 100 
         #Q = 20 
 
         num_u_trick = self.trick_paras['num_u_trick'] if self.trick_paras is not None else 1
 
         if self.trick_paras['init_u_trick'].__name__ != 'zeros':
+
 
             params = {
                 "log_tau": 0.0, #inv var for data ll
@@ -133,8 +126,8 @@ class GPRLatent:
 
             }            
 
-        else:
-            params = {
+        else: 
+                params = {
                 "log_tau": 0.0, #inv var for data ll
                 "log_v": 0.0, #inv var for eq likelihood
                 #"kernel_paras": {'log-w': np.zeros(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
@@ -143,8 +136,11 @@ class GPRLatent:
                 "u": np.zeros((self.N_con, num_u_trick)), #u value on the collocation points
 
             }
+
         opt_state = self.optimizer.init(params)
-        # self.run_lbfgs(params)
+
+        min_err = 2.0
+        print("here")
 
         loss_list = []
         err_list = []
@@ -153,8 +149,6 @@ class GPRLatent:
         ls_list = []
         epoch_list = []
 
-        min_err = 2.0
-        print("here")
         for i in tqdm.tqdm(range(nepoch)):
             key, sub_key = jax.random.split(key)
             params, opt_state, loss = self.step(params, opt_state, sub_key)
@@ -230,84 +224,51 @@ class GPRLatent:
         plt.title('ls scatter')
 
         # make the whole figure title to be the name of the trick
-        plt.suptitle( self.trick_paras['init_u_trick'].__name__ + '-nU-%d-Q-%d-epoch-%d-lr-%.4f'%(num_u_trick,Q,nepoch,self.trick_paras['lr']))
+        plt.suptitle( 'K-%.3f-'%self.k_val + self.trick_paras['init_u_trick'].__name__ + '-nU-%d-Q-%d-epoch-%d-lr-%.4f'%(num_u_trick,Q,nepoch,self.trick_paras['lr']))
 
 
-        prefix = 'trick_analysis/poisson1d-any/'
+        prefix = 'trick_analysis/poisson1d/'
 
         # build the folder if not exist
         if not os.path.exists(prefix):
             os.makedirs(prefix)
 
-        fig_name = self.trick_paras['init_u_trick'].__name__ + '-nu-%d-Q-%d-epoch-%d-lr-%.4f.png'%(num_u_trick,Q,nepoch,self.trick_paras['lr'])
+        fig_name = self.trick_paras['init_u_trick'].__name__ + 'K-%.3f-'%self.k_val +'-nu-%d-Q-%d-epoch-%d-lr-%.4f.png'%(num_u_trick,Q,nepoch,self.trick_paras['lr'])
         print ('save fig to ', prefix+fig_name)
 
         plt.savefig(prefix+fig_name)
             
 
-
-
-
-        # plt.figure()
-        
-        # plt.plot(self.Xte.flatten(), self.yte.flatten(), 'k-', label='Truth')
-        # plt.plot(self.Xte.flatten(), preds.flatten(), 'r-', label='Pred')
-        # plt.scatter(Xtr.flatten(), self.y.flatten(), c='g', label='Train')
-        # plt.legend(loc=2)
-        # plt.savefig("poisson1d-any-%d.png"%nepoch)
-        # plt.clf()
-
-        # # plot the loss and error curve
-        # plt.figure()
-        # plt.plot(loss_list)
-        # plt.savefig("poisson1d-any-%d-loss.png"%nepoch)
-
-
-#Poisson source, u_xx = f
-#u should be the target function
-def get_source_val(u, x_vec):
-    return vmap(grad(grad(u, 0),0), (0))(x_vec)
-
-
-def test_multi_scale(trick_paras):
+def test(trick_paras):
     #equation
-    u = lambda x: jnp.sin(5*jnp.pi*x) + jnp.sin(23.7*jnp.pi*x) + jnp.cos(92.3*jnp.pi*x)
+    K = 93.26
     #test points
     M = 400
     X_test = np.linspace(0, 1, num=M).reshape(-1, 1)
-    Y_test = u(X_test)
+    Y_test = np.sin(K*np.pi*X_test)
     #collocation points
     N_col = 200 
     X_col = np.linspace(0, 1, num=N_col).reshape(-1, 1)
     Xind = np.array([0, X_col.shape[0]-1 ])
-    y = jnp.array([u(X_col[Xind[0]]), u(X_col[Xind[1]])]).reshape(-1)
-    src_vals = get_source_val(u, X_col.reshape(-1))
+    y = np.array([np.sin(K*np.pi*X_col[Xind[0]]), np.sin(K*np.pi*X_col[Xind[1]])]).reshape(-1)
 
-
-
-    
-    # trick_paras = {'init_u_trick': np.zeros, 'num_u_trick': 10, 'Q': 20}
-
-
-    model_PIGP = GPRLatent(Xind, y, X_col, src_vals,  1e-6, X_test, Y_test,trick_paras)
+    model_PIGP = GPRLatent(K, Xind, y, X_col, 1e-6, X_test, Y_test,trick_paras)
     np.random.seed(123)
     random.seed(123)
-    #nepoch = 250000
-    nepoch = 100000
-
+    nepoch = 10000
     model_PIGP.train(nepoch)
-    # model_PIGP.train_lbfgs(nepoch)
-    # model_PIGP.train_hybrid(1000)
-
-
 
 
 if __name__ == '__main__':
-    # trick_paras = 
 
-    trick_list = [{'init_u_trick': np.random.rand, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
-                   {'init_u_trick': np.random.randn, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
-                   {'init_u_trick': np.zeros, 'num_u_trick': 20, 'Q': 25, 'lr': 1e-2},]
+    trick_list = [
+                {'init_u_trick': np.random.rand, 'num_u_trick': 25, 'Q': 50, 'lr': 1e-2},
+                {'init_u_trick': np.zeros, 'num_u_trick': 1, 'Q': 50, 'lr': 1e-2},
+                {'init_u_trick': np.random.randn, 'num_u_trick': 1, 'Q': 50, 'lr': 1e-2},
+                  {'init_u_trick': np.random.rand, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
+                   {'init_u_trick': np.random.randn, 'num_u_trick': 25, 'Q': 50, 'lr': 1e-2},
+                   {'init_u_trick': np.zeros, 'num_u_trick': 25, 'Q': 50, 'lr': 1e-2}
+                   ]
 
     for trick_paras in trick_list:
-        test_multi_scale(trick_paras)
+        test(trick_paras)
