@@ -194,7 +194,9 @@ class GPRLatent:
             "log_v": 0.0, #inv var for eq likelihood
             #"kernel_paras": {'log-w': np.zeros(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
             "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
+            # "u": np.zeros((self.N_con, 1)), #u value on the collocation points
             "u": np.zeros((self.N_con, 1)), #u value on the collocation points
+
         }
         opt_state = self.optimizer.init(params)
         # self.run_lbfgs(params)
