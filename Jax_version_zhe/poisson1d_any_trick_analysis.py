@@ -293,7 +293,7 @@ def test_multi_scale(trick_paras):
     np.random.seed(123)
     random.seed(123)
     #nepoch = 250000
-    nepoch = 100000
+    nepoch = 500000
 
     model_PIGP.train(nepoch)
     # model_PIGP.train_lbfgs(nepoch)
@@ -305,9 +305,12 @@ def test_multi_scale(trick_paras):
 if __name__ == '__main__':
     # trick_paras = 
 
-    trick_list = [{'init_u_trick': np.random.rand, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
-                   {'init_u_trick': np.random.randn, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
-                   {'init_u_trick': np.zeros, 'num_u_trick': 20, 'Q': 25, 'lr': 1e-2},]
+    trick_list = [{'init_u_trick': np.zeros, 'num_u_trick': 1, 'Q': 20, 'lr': 1e-2},]
+
+
+    # trick_list = [{'init_u_trick': np.random.rand, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
+    #                {'init_u_trick': np.random.randn, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
+    #                {'init_u_trick': np.zeros, 'num_u_trick': 20, 'Q': 25, 'lr': 1e-2},]
 
     for trick_paras in trick_list:
         test_multi_scale(trick_paras)

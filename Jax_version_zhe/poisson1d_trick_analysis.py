@@ -9,6 +9,9 @@ from kernel_matrix import Kernel_matrix
 from jax import vmap
 import pandas as pd
 import tqdm
+import time
+import os
+
 np.random.seed(0)
 random.seed(0)
 
@@ -233,7 +236,7 @@ class GPRLatent:
         if not os.path.exists(prefix):
             os.makedirs(prefix)
 
-        fig_name = self.trick_paras['init_u_trick'].__name__ + 'K-%.3f-'%self.k_val +'-nu-%d-Q-%d-epoch-%d-lr-%.4f.png'%(num_u_trick,Q,nepoch,self.trick_paras['lr'])
+        fig_name = self.trick_paras['init_u_trick'].__name__ + '-K-%.3f-'%self.k_val +'-nu-%d-Q-%d-epoch-%d-lr-%.4f.png'%(num_u_trick,Q,nepoch,self.trick_paras['lr'])
         print ('save fig to ', prefix+fig_name)
 
         plt.savefig(prefix+fig_name)
@@ -255,14 +258,14 @@ def test(trick_paras):
     model_PIGP = GPRLatent(K, Xind, y, X_col, 1e-6, X_test, Y_test,trick_paras)
     np.random.seed(123)
     random.seed(123)
-    nepoch = 10000
+    nepoch = 50000
     model_PIGP.train(nepoch)
 
 
 if __name__ == '__main__':
 
     trick_list = [
-                {'init_u_trick': np.random.rand, 'num_u_trick': 25, 'Q': 50, 'lr': 1e-2},
+                {'init_u_trick': np.random.rand, 'num_u_trick': 1, 'Q': 50, 'lr': 1e-2},
                 {'init_u_trick': np.zeros, 'num_u_trick': 1, 'Q': 50, 'lr': 1e-2},
                 {'init_u_trick': np.random.randn, 'num_u_trick': 1, 'Q': 50, 'lr': 1e-2},
                   {'init_u_trick': np.random.rand, 'num_u_trick': 25, 'Q': 20, 'lr': 1e-2},
