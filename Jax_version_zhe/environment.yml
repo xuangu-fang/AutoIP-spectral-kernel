@@ -147,8 +147,8 @@ dependencies:
     - ipywidgets==8.0.6
     - isoduration==20.11.0
     - jaraco-classes==3.2.3
-    - jax==0.3.21
-    - jaxlib==0.3.20+cuda11.cudnn82
+    - jax==0.4.6
+    - jaxlib==0.4.6+cuda12.cudnn88
     - jaxopt==0.5.5
     - jedi==0.18.2
     - jeepney==0.8.0

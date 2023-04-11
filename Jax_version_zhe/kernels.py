@@ -52,6 +52,53 @@ class SM_kernel_u_1d(object):
 
 
 
+class Periodic_kernel_u_1d(object):
+
+    def __init__(self):
+        pass
+
+    @partial(jit, static_argnums=(0, ))
+    def kappa(self, x1, y1, paras):
+        # return  (jnp.exp(paras['log-w'])*jnp.exp(-(jnp.sin(jnp.pi*(x1-y1)*paras['freq'])**2)*jnp.exp(paras['log-ls']))).sum()
+        return (jnp.exp(paras['log-w'])*jnp.exp(-(x1-y1)**2*jnp.exp(paras['log-ls']))*jnp.cos(jnp.pi*(x1-y1)*paras['freq'])).sum()
+        
+    
+
+    @partial(jit, static_argnums=(0, ))
+    def D_x1_kappa(self, x1, y1, paras): #cov(f'(x1), f(y1))
+        val = grad(self.kappa, 0)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def DD_x1_kappa(self, x1, y1, paras): #cov(f''(x1), f(y1))
+        val = grad(grad(self.kappa, 0), 0)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def D_y1_kappa(self, x1, y1, paras): #cov(f(x1), f'(y1))
+        val = grad(self.kappa, 1)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def DD_y1_kappa(self, x1, y1, paras): #cov(f(x1), f''(y1))
+        val = grad(grad(self.kappa, 1), 1)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def D_x1_D_y1_kappa(self, x1, y1, paras): #cov(f'(x1),f'(y1))
+        val = grad(grad(self.kappa, 0), 1)(x1, y1, paras)
+        return val
+    @partial(jit, static_argnums=(0, ))
+    def DD_x1_DD_y1_kappa(self, x1, y1, paras): #cov(f''(x1), f''(y1))
+        val = grad(grad(grad(grad(self.kappa, 0), 0), 1),1)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def D_x1_DD_y1_kappa(self, x1, y1, paras): #cov(f'(x1), f''(y1))
+        val = grad(grad(grad(self.kappa, 0), 1), 1)(x1, y1, paras)
+        return val
+
+
 
 class RBF_kernel_u_1d(object):
 
