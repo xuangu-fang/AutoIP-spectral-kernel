@@ -7,6 +7,60 @@ import math
 config.update("jax_enable_x64", True)
 
 
+
+
+class SM_kernel_u_1d_fix(object):
+
+    def __init__(self,fix_dict, fix_paras):
+
+        self.fix_dict = fix_dict
+        self.fix_paras = fix_paras
+
+    @partial(jit, static_argnums=(0, ))
+    def kappa(self, x1, y1, paras):
+
+        log_w = self.fix_dict['log-w']*self.fix_paras['log-w'] + (1-self.fix_dict['log-w'])*paras['log-w']
+        log_ls = self.fix_dict['log-ls']*self.fix_paras['log-ls'] + (1-self.fix_dict['log-ls'])*paras['log-ls']
+        freq = self.fix_dict['freq']*self.fix_paras['freq'] + (1-self.fix_dict['freq'])*paras['freq']
+
+        # return (jnp.exp(paras['log-w'])*jnp.exp(-(x1-y1)**2*jnp.exp(paras['log-ls']))*jnp.cos(2*jnp.pi*(x1-y1)*paras['freq'])).sum()
+        return (jnp.exp(log_w)*jnp.exp(-(x1-y1)**2*jnp.exp(log_ls))*jnp.cos(2*jnp.pi*(x1-y1)*freq)).sum()
+
+    @partial(jit, static_argnums=(0, ))
+    def D_x1_kappa(self, x1, y1, paras): #cov(f'(x1), f(y1))
+        val = grad(self.kappa, 0)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def DD_x1_kappa(self, x1, y1, paras): #cov(f''(x1), f(y1))
+        val = grad(grad(self.kappa, 0), 0)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def D_y1_kappa(self, x1, y1, paras): #cov(f(x1), f'(y1))
+        val = grad(self.kappa, 1)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def DD_y1_kappa(self, x1, y1, paras): #cov(f(x1), f''(y1))
+        val = grad(grad(self.kappa, 1), 1)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def D_x1_D_y1_kappa(self, x1, y1, paras): #cov(f'(x1),f'(y1))
+        val = grad(grad(self.kappa, 0), 1)(x1, y1, paras)
+        return val
+    @partial(jit, static_argnums=(0, ))
+    def DD_x1_DD_y1_kappa(self, x1, y1, paras): #cov(f''(x1), f''(y1))
+        val = grad(grad(grad(grad(self.kappa, 0), 0), 1),1)(x1, y1, paras)
+        return val
+
+    @partial(jit, static_argnums=(0, ))
+    def D_x1_DD_y1_kappa(self, x1, y1, paras): #cov(f'(x1), f''(y1))
+        val = grad(grad(grad(self.kappa, 0), 1), 1)(x1, y1, paras)
+        return val
+
+
 class SM_kernel_u_1d(object):
 
     def __init__(self):
