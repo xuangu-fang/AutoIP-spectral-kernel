@@ -1,5 +1,6 @@
 '''investigate the effect of the fix weight, freq and lengthscale'''
 import numpy as np
+import kernels
 from kernels import *
 import random
 import matplotlib.pyplot as plt
@@ -55,7 +56,17 @@ class GPRLatent:
         self.llk_weight = trick_paras['llk_weight'] if 'llk_weight' in trick_paras else 1.0
 
         fix_kernel_paras =  {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100}
-        self.cov_func = SM_kernel_u_1d_fix(fix_dict, fix_kernel_paras)
+
+
+
+        self.cov_func = kernels.SM_kernel_u_1d_fix(fix_dict, fix_kernel_paras) if 'kernel' not in trick_paras else trick_paras['kernel'](fix_dict, fix_kernel_paras)
+
+        print('kernel is:', self.cov_func.__class__.__name__)
+        
+        
+
+
+        
 
         self.kernel_matrix = Kernel_matrix(self.jitter, self.cov_func, 'NONE')
         self.Xte = X_test
@@ -139,7 +150,7 @@ class GPRLatent:
             "log_tau": 0.0, #inv var for data ll
             "log_v": 0.0, #inv var for eq likelihood
             #"kernel_paras": {'log-w': np.zeros(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
-            "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
+            "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.log(1/Q)*np.ones(Q)},
             "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
 
         }            
@@ -246,7 +257,7 @@ class GPRLatent:
         plt.suptitle(fix_prefix +'\n'+self.trick_paras['init_u_trick'].__name__ + '-nU-%d-Q-%d-epoch-%d-lr-%.4f'%(num_u_trick,Q,nepoch,self.trick_paras['lr']))
 
 
-        prefix = 'fix_analysis/'+ self.trick_paras['equation'] + '/epoch_'+str(nepoch)+'/Q'+str(Q)+'/'
+        prefix = 'fix_analysis/'+ self.trick_paras['equation'] + '/kernel_'+self.cov_func.__class__.__name__ +  '/epoch_'+str(nepoch)+'/Q'+str(Q)+'/'
 
         # build the folder if not exist
         if not os.path.exists(prefix):
@@ -292,7 +303,7 @@ def test_multi_scale(trick_paras,fix_dict):
     np.random.seed(123)
     random.seed(123)
     #nepoch = 250000
-    nepoch = 100000
+    nepoch = 500000
 
     model_PIGP.train(nepoch)
     # model_PIGP.train_lbfgs(nepoch)
@@ -307,24 +318,25 @@ if __name__ == '__main__':
     fix_dict_list = [
 
         {'log-w':0, 'freq':0, 'log-ls':0},
-        {'log-w':0, 'freq':1, 'log-ls':0},
+        # {'log-w':0, 'freq':1, 'log-ls':0},
 
     ]
 
 
     trick_list = [
         # {'equation':'x_time_sinx' ,'init_u_trick': np.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2},
-        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':1.0},    
+        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels.Matern52_add_Cos_1d},    
+        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1, 'kernel' : kernels.Matern52_Cos_1d},    
 
-        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':10},     
+        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':10},     
 
-        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':100},
+        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':100},
 
-        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1.0},    
+        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1.0},    
 
-        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100},     
+        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100},     
 
-        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1000},   
+        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1000},   
               
                   ]
 

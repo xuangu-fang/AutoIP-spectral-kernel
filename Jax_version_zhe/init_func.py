@@ -24,7 +24,7 @@ def linear(model_class,trick_dict):
 
 def linear_randn(model_class,trick_dict):
      
-     scale = trick_dict['scale'] if 'scale' in trick_dict else 0.5
+     scale = trick_dict['scale'] if 'scale' in trick_dict else 0.2
      
      if trick_dict['num_u_trick'] ==1: 
          
