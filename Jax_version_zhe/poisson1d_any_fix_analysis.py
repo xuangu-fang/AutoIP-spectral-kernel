@@ -150,7 +150,7 @@ class GPRLatent:
             "log_tau": 0.0, #inv var for data ll
             "log_v": 0.0, #inv var for eq likelihood
             #"kernel_paras": {'log-w': np.zeros(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
-            "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.log(1/Q)*np.ones(Q)},
+            "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1),'bias-poly': 0.5*np.ones(1)},
             "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
 
         }            
@@ -325,7 +325,9 @@ if __name__ == '__main__':
 
     trick_list = [
         # {'equation':'x_time_sinx' ,'init_u_trick': np.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2},
-        {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels.Matern52_add_Cos_1d},    
+        {'equation':'poisson1d-mix' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels.Matern52_add_poly_1d},  
+
+        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels.Matern52_add_Cos_1d},  
         # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1, 'kernel' : kernels.Matern52_Cos_1d},    
 
         # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':10},     
