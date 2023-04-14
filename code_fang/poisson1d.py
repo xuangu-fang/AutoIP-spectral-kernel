@@ -123,7 +123,7 @@ class GPRLatent:
 
     def train(self, nepoch):
         key = jax.random.PRNGKey(0)
-        Q = self.trick_paras['Q'] if self.trick_paras is not None else 10
+        Q = self.trick_paras['Q'] #number of basis functions
 
         params = {
             "log_tau": 0.0, #inv var for data ll
@@ -174,13 +174,13 @@ class GPRLatent:
                 epoch_list.append(i)
 
                 if i > 0 and err < threshold:
-                    print('early stop at epoch %d'%i)
+                    print('get thr of relative l2 loss:  %f,  early stop at epoch %d'%(threshold, i))
                     break
 
-            log_dict = {'loss_list':loss_list, 'err_list':err_list, 'w_list':w_list, 'freq_list':freq_list, 'ls_list':ls_list, 'epoch_list':epoch_list}
+        log_dict = {'loss_list':loss_list, 'err_list':err_list, 'w_list':w_list, 'freq_list':freq_list, 'ls_list':ls_list, 'epoch_list':epoch_list}
 
         print('gen fig ...')
-        utils.make_fig_v1(self, params, log_dict)
+        utils.make_fig_1d(self, params, log_dict)
 
 
             
@@ -194,9 +194,9 @@ def test_multi_scale(trick_paras,fix_dict=
                      None):
     #equation
     equation_dict = {
-        'poisson1d-mix':lambda x: jnp.sin(5*jnp.pi*x) + jnp.sin(23.7*jnp.pi*x) + jnp.cos(92.3*jnp.pi*x),
-        'poisson1d-single':lambda x: jnp.sin(93.2*jnp.pi*x),
-        'x_time_sinx':lambda x: x*jnp.sin(50*jnp.pi*x),
+        'poisson1d-mix-sin':lambda x: jnp.sin(5*jnp.pi*x) + jnp.sin(23.7*jnp.pi*x) + jnp.cos(92.3*jnp.pi*x),
+        'poisson1d-single-sin':lambda x: jnp.sin(93.2*jnp.pi*x),
+        'poisson1d-x_time_sinx':lambda x: x*jnp.sin(50*jnp.pi*x),
         'x2_add_sinx':lambda x: jnp.sin(72.6 *jnp.pi*x) - 2*(x-0.5)**2,
     }
 

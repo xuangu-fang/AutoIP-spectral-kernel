@@ -61,7 +61,7 @@ class Kernel_1d(object):
     @partial(jit, static_argnums=(0, ))
     def frezze_paras(self,paras):
             
-            if self.fix_dict is not None:
+            if self.fix_dict is not None and self.fix_paras is not None:
 
                 log_w = self.fix_dict['log-w']*self.fix_paras['log-w'] + (1-self.fix_dict['log-w'])*paras['log-w']
                 log_ls = self.fix_dict['log-ls']*self.fix_paras['log-ls'] + (1-self.fix_dict['log-ls'])*paras['log-ls']
