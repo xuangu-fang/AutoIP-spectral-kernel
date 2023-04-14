@@ -8,6 +8,8 @@ config.update("jax_enable_x64", True)
 
 
 
+
+
 class Matern52_add_poly_1d(object):
 
     def __init__(self,fix_dict, fix_paras):
@@ -112,15 +114,6 @@ class Matern52_add_Cos_1d(object):
 
         # add with sepearate matern kernel
         return (jnp.exp(log_w)*cosine*matern_coef).sum() + (jnp.exp(log_w_matern)*matern_single).sum()
-
-         # add with sepearate polynomial kernel
-
-        #  type 1
-        return (jnp.exp(log_w)*cosine*matern_coef).sum() + (jnp.exp(log_w_matern)*(x1*y1-jnp.exp(log_ls_matern))**2).sum()
-
-
-        #  type 2
-        # return (jnp.exp(log_w)*cosine*matern_coef).sum() + (jnp.exp(log_w_matern)*(x1*y1*jnp.exp(log_ls_matern)-bias)**2).sum()
 
 
     @partial(jit, static_argnums=(0, ))

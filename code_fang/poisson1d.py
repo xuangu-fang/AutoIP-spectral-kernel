@@ -1,7 +1,7 @@
 '''investigate the effect of the fix weight, freq and lengthscale'''
 import numpy as np
-import kernels
-from kernels import *
+import kernels_new
+from kernels_new import *
 import random
 import matplotlib.pyplot as plt
 import optax
@@ -10,7 +10,8 @@ import jax.numpy as jnp
 from kernel_matrix import Kernel_matrix
 from jax import vmap
 import pandas as pd
-from jaxopt import LBFGS 
+import utils
+
 import time
 import tqdm
 import os
@@ -36,41 +37,27 @@ class GPRLatent:
         #X is the 1st and the last point in X_col
         self.X_con = X_col
         self.N = self.Xind.shape[0]
-        #self.N_col = self.X_col.shape[0]
         self.N_con = self.X_con.shape[0]
-
-
-
-        # self.cov_func = Periodic_kernel_u_1d()
-
-        lr = trick_paras['lr'] if trick_paras is not None else 0.01
-
-        self.optimizer = optax.adam(learning_rate= lr)
-        # self.optimizer = optax.adamaxw(0.01)
 
         self.trick_paras = trick_paras
         self.fix_dict = fix_dict
 
-        Q =  trick_paras['Q']
+        lr = trick_paras['lr'] if trick_paras is not None else 0.01
 
-        self.llk_weight = trick_paras['llk_weight'] if 'llk_weight' in trick_paras else 1.0
+        self.optimizer = optax.adam(learning_rate= lr)
 
-        fix_kernel_paras =  {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100}
+        self.llk_weight = trick_paras['llk_weight'] 
 
+        fix_kernel_paras =  {'log-w': np.log(1/trick_paras['Q'])*np.ones(trick_paras['Q']), 'log-ls': np.zeros(trick_paras['Q']), 'freq': np.linspace(0, 1, trick_paras['Q'])*100} if fix_dict is not None else None
 
-
-        self.cov_func = kernels.SM_kernel_u_1d_fix(fix_dict, fix_kernel_paras) if 'kernel' not in trick_paras else trick_paras['kernel'](fix_dict, fix_kernel_paras)
-
-        print('kernel is:', self.cov_func.__class__.__name__)
+        self.cov_func =  trick_paras['kernel'](fix_dict, fix_kernel_paras)
         
-        
-
-
-        
-
         self.kernel_matrix = Kernel_matrix(self.jitter, self.cov_func, 'NONE')
         self.Xte = X_test
         self.yte = Y_test 
+
+        print('equation is: ', self.trick_paras['equation'] )
+        print('kernel is:', self.cov_func.__class__.__name__)
 
     def KL_term(self, mu, L, K):
         Ltril = jnp.tril(L)
@@ -82,10 +69,7 @@ class GPRLatent:
     @partial(jit, static_argnums=(0,))
     def loss(self, params, key):
         u = params['u'] #function values at the collocation points
-
-
         u = u.sum(axis=1).reshape(-1,1) #sum over trick
-
         log_v = params['log_v'] #inverse variance for eq ll 
         log_tau = params['log_tau'] #inverse variance for boundary ll
         kernel_paras = params['kernel_paras']
@@ -93,7 +77,7 @@ class GPRLatent:
         X1_p = x_p.flatten()
         X2_p = jnp.transpose(x_p).flatten()
         #only the cov matrix of func vals
-        K = self.kernel_matrix.get_kernel_matrx(X1_p, X2_p, kernel_paras) 
+        K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, kernel_paras) 
         Kinv_u = jnp.linalg.solve(K, u)
         log_prior = -0.5*jnp.linalg.slogdet(K)[1] - 0.5*jnp.sum(u*Kinv_u)
         #boundary
@@ -125,7 +109,7 @@ class GPRLatent:
         x_p = jnp.tile(self.X_con.flatten(), (self.N_con, 1)).T
         X1_p = x_p.flatten()
         X2_p = jnp.transpose(x_p).flatten()
-        K = self.kernel_matrix.get_kernel_matrx(X1_p, X2_p, ker_paras)
+        K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, ker_paras)
         Kinv_u = jnp.linalg.solve(K, u)
 
         N_te = Xte.shape[0]
@@ -140,19 +124,12 @@ class GPRLatent:
     def train(self, nepoch):
         key = jax.random.PRNGKey(0)
         Q = self.trick_paras['Q'] if self.trick_paras is not None else 10
-        #Q = 100 
-        #Q = 20 
-
-        num_u_trick = self.trick_paras['num_u_trick'] if self.trick_paras is not None else 1
-
 
         params = {
             "log_tau": 0.0, #inv var for data ll
             "log_v": 0.0, #inv var for eq likelihood
-            #"kernel_paras": {'log-w': np.zeros(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
             "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1),'bias-poly': 0.5*np.ones(1)},
             "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
-
         }            
 
 
@@ -200,73 +177,12 @@ class GPRLatent:
                     print('early stop at epoch %d'%i)
                     break
 
+            log_dict = {'loss_list':loss_list, 'err_list':err_list, 'w_list':w_list, 'freq_list':freq_list, 'ls_list':ls_list, 'epoch_list':epoch_list}
+
         print('gen fig ...')
-        ''' plot a figure with 6 subplots. 1 for the truth- prediction, 2 for the loss curve, 3 for the error curve, 4,5,6 for scatter of the weights, freq, and ls'''
-        
-        plt.figure(figsize=(20, 10))
+        utils.make_fig_v1(self, params, log_dict)
 
 
-        # first subplot
-        plt.subplot(2, 3, 1)
-        preds = self.preds(params, self.Xte)
-        Xtr = self.X_col[self.Xind]
-
-        preds = self.preds(params, self.Xte)
-        Xtr = self.X_col[self.Xind]
-
-        plt.plot(self.Xte.flatten(), self.yte.flatten(), 'k-', label='Truth')
-        plt.plot(self.Xte.flatten(), preds.flatten(), 'r-', label='Pred')
-        plt.scatter(Xtr.flatten(), self.y.flatten(), c='g', label='Train')
-        plt.legend(loc=2)
-        plt.title('pred-truth:loss = %g, err = %g'%(loss, err))
-
-        # second subplot: loss curve, x-axis is the epoch, y-axis is the log-loss
-        plt.subplot(2, 3, 2)
-        plt.plot(epoch_list, loss_list)
-        plt.title('loss curve')
-
-        # third subplot: error curve
-        plt.subplot(2, 3, 3)
-        plt.plot(epoch_list,err_list)
-        plt.title('error curve')
-
-        # fourth subplot: scatter of the weights at each test point, which store on the list w_list, the x-axies is epoch, y-axis is the weights, make the marker size smaller to make the plot clearer
-
-        plt.subplot(2, 3, 4)
-        for i in range(Q):
-            plt.scatter(epoch_list, [w[i] for w in w_list], s=10)
-        plt.title('weights scatter')
-
-        # fifth subplot: scatter of the freq at each test point, which store on the list freq_list, the x-axies is epoch, y-axis is the freq
-        plt.subplot(2, 3, 5)
-        for i in range(Q):
-            plt.scatter(epoch_list, [f[i] for f in freq_list], s=10)
-        plt.title('freq scatter')
-
-        # sixth subplot: scatter of the ls at each test point, which store on the list ls_list, the x-axies is epoch, y-axis is the ls
-        plt.subplot(2, 3, 6)
-        for i in range(Q):
-            plt.scatter(epoch_list, [l[i] for l in ls_list], s=10)
-        plt.title('ls scatter')
-
-
-        fix_prefix_dict = {1:'_fix_',0:'_nonfix_'}
-        fix_prefix = 'w'+fix_prefix_dict[self.fix_dict['log-w']]+'ls'+fix_prefix_dict[self.fix_dict['log-ls']]+'freq'+fix_prefix_dict[self.fix_dict['freq']]
-
-        # make the whole figure title to be the name of the trick
-        plt.suptitle(fix_prefix +'\n'+self.trick_paras['init_u_trick'].__name__ + '-nU-%d-Q-%d-epoch-%d-lr-%.4f'%(num_u_trick,Q,nepoch,self.trick_paras['lr']))
-
-
-        prefix = 'result_analysis/'+ self.trick_paras['equation'] + '/kernel_'+self.cov_func.__class__.__name__ +  '/epoch_'+str(nepoch)+'/Q'+str(Q)+'/'
-
-        # build the folder if not exist
-        if not os.path.exists(prefix):
-            os.makedirs(prefix)
-
-        fig_name = fix_prefix + 'llk_w-%.1f-'%(self.llk_weight) + self.trick_paras['init_u_trick'].__name__ + '-nu-%d-Q-%d-epoch-%d-lr-%.4f.png'%(num_u_trick,Q,nepoch,self.trick_paras['lr'])
-        print ('save fig to ', prefix+fig_name)
-
-        plt.savefig(prefix+fig_name)
             
 #Poisson source, u_xx = f
 #u should be the target function
@@ -274,7 +190,8 @@ def get_source_val(u, x_vec):
     return vmap(grad(grad(u, 0),0), (0))(x_vec)
 
 
-def test_multi_scale(trick_paras,fix_dict):
+def test_multi_scale(trick_paras,fix_dict=
+                     None):
     #equation
     equation_dict = {
         'poisson1d-mix':lambda x: jnp.sin(5*jnp.pi*x) + jnp.sin(23.7*jnp.pi*x) + jnp.cos(92.3*jnp.pi*x),
@@ -297,19 +214,13 @@ def test_multi_scale(trick_paras,fix_dict):
     y = jnp.array([u(X_col[Xind[0]]), u(X_col[Xind[1]])]).reshape(-1)
     src_vals = get_source_val(u, X_col.reshape(-1))
 
-
-
     model_PIGP = GPRLatent(Xind, y, X_col, src_vals,  1e-6, X_test, Y_test,trick_paras,fix_dict)
     np.random.seed(123)
     random.seed(123)
     #nepoch = 250000
-    nepoch = 100000
+    nepoch = trick_paras['nepoch']
 
     model_PIGP.train(nepoch)
-    # model_PIGP.train_lbfgs(nepoch)
-    # model_PIGP.train_hybrid(1000)
-
-
 
 
 if __name__ == '__main__':
@@ -324,22 +235,8 @@ if __name__ == '__main__':
 
 
     trick_list = [
-        # {'equation':'x_time_sinx' ,'init_u_trick': np.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2},
-        # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels.Matern52_add_poly_1d},  
-        # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels.Matern52_add_Cos_1d}, 
 
-        {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels.Matern52_add_Cos_1d},  
-        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1, 'kernel' : kernels.Matern52_Cos_1d},    
-
-        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':10},     
-
-        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 50, 'Q': 30, 'lr': 1e-2, 'llk_weight':100},
-
-        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1.0},    
-
-        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100},     
-
-        # {'equation':'x2_add_sinx' ,'init_u_trick': init_func.linear_randn, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1000},   
+        {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
               
                   ]
 
