@@ -136,6 +136,28 @@ class Matern52_Cos_add_Matern_1d(Kernel_1d):
 
         # add with sepearate matern kernel
         return (jnp.exp(log_w)*cosine*matern_coef).sum() + (jnp.exp(log_w_matern)*matern_single).sum()
+    
+class Matern52_1d(Kernel_1d):
+
+    def __init__(self, fix_dict=None, fix_paras=None):
+        super().__init__(fix_dict, fix_paras)
+
+    @partial(jit, static_argnums=(0, ))
+    def kappa(self, x1, y1, paras):
+        log_w, log_ls, freq = self.frezze_paras(paras)
+        # log_w_matern = paras['log-w-matern']
+        log_w_matern = 1.0
+
+        log_ls_matern = paras['log-ls-matern']
+        d = jnp.abs(x1-y1)
+
+        matern_single = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls_matern) + 5/3*d**2*jnp.exp(log_ls_matern)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls_matern))
+
+        matern_coef = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2*jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+
+        # return (jnp.exp(log_w)*matern_coef).sum() 
+
+        return (jnp.exp(log_w_matern)*matern_single).sum()
 
 
 

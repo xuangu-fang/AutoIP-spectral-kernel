@@ -132,6 +132,14 @@ class GPRLatent:
             "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
         }            
 
+        # params = {
+        #     "log_tau": 0.0, #inv var for data ll
+        #     "log_v": 0.0, #inv var for eq likelihood
+        #     "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.ones(Q), 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1),'bias-poly': 0.5*np.ones(1)},
+        #     "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
+        # }         
+
+
 
         opt_state = self.optimizer.init(params)
         # self.run_lbfgs(params)
@@ -236,7 +244,8 @@ if __name__ == '__main__':
 
     trick_list = [
 
-        {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
+        # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
+        {'equation':'poisson1d-single-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':10.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 10000},  
               
                   ]
 
