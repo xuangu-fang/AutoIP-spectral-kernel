@@ -90,7 +90,7 @@ def make_fig_1d(model, params, log_dict):
         plt.savefig(prefix+fig_name)
 
 
-def make_fig_2d(model, params, log_dict,fontsize=36):
+def make_fig_2d(model, params, log_dict,extra_name = '', fontsize=36):
      
     # plot a figure with 9 subplots. 1 for the truth- prediction, 2 for the loss curve, 3 for the error curve, {4,5,6} for scatter of the weights, freq, and ls for x1, {7,8,9} for scatter of the weights, freq, and ls for x2
         
@@ -174,7 +174,7 @@ def make_fig_2d(model, params, log_dict,fontsize=36):
         plt.suptitle(fix_prefix +'\n'+model.trick_paras['init_u_trick'].__name__ + '-nU-%d-Q-%d-epoch-%d-lr-%.4f'%(num_u_trick,Q,nepoch,model.trick_paras['lr']),fontsize=fontsize)
 
 
-        prefix = 'result_analysis/'+ model.trick_paras['equation'] + '/kernel_'+model.cov_func.__class__.__name__ +  '/epoch_'+str(nepoch)+'/Q'+str(Q)+'/'
+        prefix = 'result_analysis/'+ model.trick_paras['equation']+ extra_name +'/kernel_'+model.cov_func.__class__.__name__ +  '/epoch_'+str(nepoch)+'/Q'+str(Q)+'/'
 
         # build the folder if not exist
         if not os.path.exists(prefix):

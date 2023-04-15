@@ -48,9 +48,11 @@ class GPRLatent:
 
         self.llk_weight = trick_paras['llk_weight'] 
 
-        fix_kernel_paras =  {'log-w': np.log(1/trick_paras['Q'])*np.ones(trick_paras['Q']), 'log-ls': np.zeros(trick_paras['Q']), 'freq': np.linspace(0, 1, trick_paras['Q'])*100} if fix_dict is not None else None
+        # fix_kernel_paras =  {'log-w': np.log(1/trick_paras['Q'])*np.ones(trick_paras['Q']), 'log-ls': np.zeros(trick_paras['Q']), 'freq': np.linspace(0, 1, trick_paras['Q'])*100} if fix_dict is not None else None
 
-        self.cov_func =  trick_paras['kernel'](fix_dict, fix_kernel_paras)
+        fix_kernel_paras =  {'log-w': np.log(1/trick_paras['Q'])*np.ones(trick_paras['Q']), 'log-ls': np.zeros(trick_paras['Q']), 'freq': np.ones(trick_paras['Q'])} if fix_dict is not None else None        
+
+        self.cov_func =  trick_paras['kernel'](fix_dict, None)
         
         self.kernel_matrix = Kernel_matrix(self.jitter, self.cov_func, 'NONE')
         self.Xte = X_test
@@ -125,10 +127,12 @@ class GPRLatent:
         key = jax.random.PRNGKey(0)
         Q = self.trick_paras['Q'] #number of basis functions
 
+        freq_scale = self.trick_paras['freq_scale']
+        
         params = {
             "log_tau": 0.0, #inv var for data ll
             "log_v": 0.0, #inv var for eq likelihood
-            "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1),'bias-poly': 0.5*np.ones(1)},
+            "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*freq_scale, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1),'bias-poly': 0.5*np.ones(1)},
             "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
         }            
 
@@ -203,7 +207,8 @@ def test_multi_scale(trick_paras,fix_dict=
     #equation
     equation_dict = {
         'poisson1d-mix-sin':lambda x: jnp.sin(5*jnp.pi*x) + jnp.sin(23.7*jnp.pi*x) + jnp.cos(92.3*jnp.pi*x),
-        'poisson1d-single-sin':lambda x: jnp.sin(93.2*jnp.pi*x),
+        'poisson1d-single-sin':lambda x: jnp.sin(92.3*jnp.pi*x),
+        'poisson1d-single-sin-low':lambda x: jnp.sin(jnp.pi*x),
         'poisson1d-x_time_sinx':lambda x: x*jnp.sin(50*jnp.pi*x),
         'x2_add_sinx':lambda x: jnp.sin(72.6 *jnp.pi*x) - 2*(x-0.5)**2,
     }
@@ -236,8 +241,8 @@ if __name__ == '__main__':
 
     fix_dict_list = [
 
+        # {'log-w':1, 'freq':1, 'log-ls':1},
         {'log-w':0, 'freq':0, 'log-ls':0},
-        # {'log-w':0, 'freq':1, 'log-ls':0},
 
     ]
 
@@ -245,7 +250,7 @@ if __name__ == '__main__':
     trick_list = [
 
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
-        {'equation':'poisson1d-single-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':10.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 10000},  
+        {'equation':'poisson1d-single-sin-low' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 10000,'freq_scale':1 },  
               
                   ]
 

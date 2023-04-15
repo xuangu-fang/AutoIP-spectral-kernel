@@ -145,8 +145,8 @@ class Matern52_1d(Kernel_1d):
     @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
         log_w, log_ls, freq = self.frezze_paras(paras)
-        # log_w_matern = paras['log-w-matern']
-        log_w_matern = 1.0
+        log_w_matern = paras['log-w-matern']
+        # log_w_matern = 1.0
 
         log_ls_matern = paras['log-ls-matern']
         d = jnp.abs(x1-y1)

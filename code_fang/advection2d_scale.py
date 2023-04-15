@@ -49,13 +49,14 @@ class GPRLatent:
 
         self.llk_weight = trick_paras['llk_weight'] 
 
-        fix_kernel_paras = None
+        Q = trick_paras['Q']
+
+        fix_kernel_paras = {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.ones(Q), 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1)}
 
         self.cov_func =  trick_paras['kernel'](fix_dict, None)
-        self.cov_func_x =  trick_paras['kernel'](fix_dict, None)#Matern52_1d(fix_dict, None)
+        
  
         self.KM_calc = Kernel_matrix(self.jitter, self.cov_func, 'NONE')
-        self.KM_calc_x = Kernel_matrix(self.jitter, self.cov_func_x, 'NONE')
 
         self.Xte = X_test
         self.ute = u_test
@@ -64,6 +65,7 @@ class GPRLatent:
         self.y_pos_tr_mesh, self.y_pos_tr_mesh_T = np.meshgrid(self.X_col[1], self.X_col[1], indexing='ij')
 
         self.beta = trick_paras['beta']
+        self.beta_scale = trick_paras['beta_scale']
 
         print('equation is: ', self.trick_paras['equation'] )
         print('kernel is:', self.cov_func.__class__.__name__)
@@ -77,9 +79,7 @@ class GPRLatent:
         kernel_paras_x = params['kernel_paras_1'] #ker params for 1st dimension
         kernel_paras_y = params['kernel_paras_2'] #ker params for 2nd dimension
 
-        # K1 = self.KM_calc.get_kernel_matrix(self.x_pos_tr_mesh, self.x_pos_tr_mesh_T, kernel_paras_x) #N1 x N1
-
-        K1 = self.KM_calc_x.get_kernel_matrix(self.x_pos_tr_mesh, self.x_pos_tr_mesh_T, kernel_paras_x) #N1 x N1
+        K1 = self.KM_calc.get_kernel_matrix(self.x_pos_tr_mesh, self.x_pos_tr_mesh_T, kernel_paras_x) #N1 x N1
 
 
         K2 = self.KM_calc.get_kernel_matrix(self.y_pos_tr_mesh, self.y_pos_tr_mesh_T, kernel_paras_y) #N2 x N2
@@ -90,11 +90,9 @@ class GPRLatent:
         #boundary
         u_b = jnp.hstack((U[0,:], U[-1,:], U[:,0], U[:,-1]))
         log_boundary_ll = 0.5 * self.Nb * log_tau - 0.5 * jnp.exp(log_tau) * jnp.sum(jnp.square(u_b.reshape(-1) - self.bvals.reshape(-1)))
+
         #equation
-
-        # K_dx1 = vmap(self.cov_func.D_x1_kappa, (0, 0, None))(self.x_pos_tr_mesh.reshape(-1), self.x_pos_tr_mesh_T.reshape(-1), kernel_paras_x).reshape(self.N1, self.N1)
-
-        K_dx1 = vmap(self.cov_func_x.D_x1_kappa, (0, 0, None))(self.x_pos_tr_mesh.reshape(-1), self.x_pos_tr_mesh_T.reshape(-1), kernel_paras_x).reshape(self.N1, self.N1)
+        K_dx1 = vmap(self.cov_func.D_y1_kappa, (0, 0, None))(self.x_pos_tr_mesh.reshape(-1), self.x_pos_tr_mesh_T.reshape(-1), kernel_paras_x).reshape(self.N1, self.N1)
 
         U_x = jnp.matmul(K_dx1, K1inv_U)
 
@@ -102,7 +100,9 @@ class GPRLatent:
 
         U_y = jnp.matmul(K_dy1, K2inv_Ut).T
 
-        eq_ll = 0.5 * self.Nc * log_v - 0.5 * jnp.exp(log_v) * jnp.sum(jnp.square( self.beta * U_x  + U_y - self.src_vals ))
+        # eq_ll = 0.5 * self.Nc * log_v - 0.5 * jnp.exp(log_v) * jnp.sum(jnp.square( self.beta * U_x  + U_y - self.src_vals ))
+        eq_ll = 0.5 * self.Nc * log_v - 0.5 * jnp.exp(log_v) * jnp.sum(jnp.square(  self.beta_scale*self.beta*U_x  + U_y - self.src_vals ))
+
 
         log_joint = log_prior + log_boundary_ll*self.llk_weight + eq_ll
         return -log_joint
@@ -121,16 +121,13 @@ class GPRLatent:
         ker_paras_y = params['kernel_paras_2']
         U = params['U']
 
-        # K1 = self.KM_calc.get_kernel_matrix(self.x_pos_tr_mesh, self.x_pos_tr_mesh_T, ker_paras_x)
-
-        K1 = self.KM_calc_x.get_kernel_matrix(self.x_pos_tr_mesh, self.x_pos_tr_mesh_T, ker_paras_x)
+        K1 = self.KM_calc.get_kernel_matrix(self.x_pos_tr_mesh, self.x_pos_tr_mesh_T, ker_paras_x)
 
         K1inv_U = jnp.linalg.solve(K1, U) #N1 x N2
 
         x_te_cross_mh, x_tr_cross_mh = np.meshgrid(self.Xte[0], self.X_col[0], indexing='ij')
-        # Kmn = vmap(self.cov_func.kappa, (0, 0, None))(x_te_cross_mh.reshape(-1), x_tr_cross_mh.reshape(-1), ker_paras_x).reshape(self.Xte[0].size, self.N1)
 
-        Kmn = vmap(self.cov_func_x.kappa, (0, 0, None))(x_te_cross_mh.reshape(-1), x_tr_cross_mh.reshape(-1), ker_paras_x).reshape(self.Xte[0].size, self.N1)
+        Kmn = vmap(self.cov_func.kappa, (0, 0, None))(x_te_cross_mh.reshape(-1), x_tr_cross_mh.reshape(-1), ker_paras_x).reshape(self.Xte[0].size, self.N1)
 
         M1 = jnp.matmul(Kmn, K1inv_U)
 
@@ -147,26 +144,18 @@ class GPRLatent:
         Q = self.trick_paras['Q'] #number of basis functions
         #Q = 100 
         #Q = 20 
-        # params = {
-        #     "log_tau": 0.0, #inv var for data ll
-        #     "log_v": 0.0, #inv var for eq likelihood
-        #     #"kernel_paras": {'log-w': np.zeros(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
-        #     "kernel_paras_1": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1)},
-        #     "kernel_paras_2": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1)},
-        #     "U": np.zeros((self.N1, self.N2)), #u value on the collocation points
-        # }
 
-        Q_x = 5
         params = {
             "log_tau": 0.0, #inv var for data ll
             "log_v": 0.0, #inv var for eq likelihood
             #"kernel_paras": {'log-w': np.zeros(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100},
-
-            "kernel_paras_1": {'log-w': np.log(1/2)*np.ones(Q_x), 'log-ls': np.zeros(Q_x), 'freq': np.zeros(Q_x), 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1)},
+            "kernel_paras_1": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*1, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1)},
 
             "kernel_paras_2": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*100, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1)},
+
             "U": np.zeros((self.N1, self.N2)), #u value on the collocation points
         }
+
 
 
         opt_state = self.optimizer.init(params)
@@ -221,17 +210,24 @@ class GPRLatent:
         log_dict = {'loss_list': loss_list, 'err_list': err_list, 'epoch_list': epoch_list, 'w_list_k1': w_list_k1, 'ls_list_k1': ls_list_k1, 'freq_list_k1': freq_list_k1, 'w_list_k2': w_list_k2, 'ls_list_k2': ls_list_k2, 'freq_list_k2': freq_list_k2}
 
         print('gen fig ...')
-        utils.make_fig_2d(self, params, log_dict)
+        extra_name = '/beta_scale_%.3f'%( self.beta_scale)
+        utils.make_fig_2d(self, params, log_dict, extra_name)
 
 
 
 #Advection Equation source, \beta u_x + u_y= 0
+#Advection Equation source, \beta u_x + u_y= 0
+
+# scale * \beta u_x + u_y=  (1-scale) * \beta u_x
+
 #u should be the target function
-def get_source_val(u, x_pos, y_pos,beta):
+def get_source_val(u, x_pos, y_pos,beta,beta_scale):
     x_mesh, y_mesh = np.meshgrid(x_pos, y_pos, indexing='ij')
     x_vec = x_mesh.reshape(-1)
     y_vec = y_mesh.reshape(-1)
-    return beta*vmap(grad(u, 0), (0, 0))(x_vec, y_vec) + vmap(grad(u, 1), (0, 0))(x_vec, y_vec)
+    return beta_scale*beta*(vmap(grad(u, 0), (0, 0))(x_vec, y_vec)) + vmap(grad(u, 1), (0, 0))(x_vec, y_vec)
+    # return (vmap(grad(u, 0), (0, 0))(x_vec, y_vec)) + vmap(grad(u, 1), (0, 0))(x_vec, y_vec)
+
 
 
 def get_mesh_data(u, M1, M2):
@@ -249,8 +245,9 @@ def test_2d(trick_paras,fix_dict=
                      None):
     
     beta = trick_paras['beta']
+    beta_scale = trick_paras['beta_scale']
     equation_dict = {
-        'Advection-Eq':lambda x,y:  jnp.sin(x-beta*y),
+        'Advection-Eq-scale':lambda x,y:  jnp.sin(x-beta*y),
     }
 
     u = equation_dict[trick_paras['equation']]
@@ -263,7 +260,9 @@ def test_2d(trick_paras,fix_dict=
     #take the boundary values, 1d array
     bvals = get_boundary_vals(u_mh) 
     #take the source values
-    src_vals = get_source_val(u, x_pos_tr, y_pos_tr,beta)
+    src_vals = get_source_val(u, x_pos_tr, y_pos_tr,beta,beta_scale)
+
+    # assert src_vals.sum() == 0
     
     src_vals = src_vals.reshape((x_pos_tr.size, y_pos_tr.size))
     # print(src_vals)
@@ -291,7 +290,8 @@ if __name__ == '__main__':
     ]
 
     trick_list = [
-                {'equation':'Advection-Eq' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-3, 'llk_weight':10.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 200000, 'beta': 30 },  
+             
+                {'equation':'Advection-Eq-scale' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 100000, 'beta': 77.2*np.  pi, 'beta_scale': 0.1},     
     ]
 
     for trick_paras in trick_list:

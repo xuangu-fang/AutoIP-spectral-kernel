@@ -137,6 +137,7 @@ class GPRLatent:
             #if i % 10 == 0 or i >= 2000:
             if True:
                 preds = self.pred(params)
+                
                 err = jnp.linalg.norm(preds.reshape(-1) - self.ute.reshape(-1))/jnp.linalg.norm(self.ute.reshape(-1))
                 if True or err < min_err:
                     if err < min_err:
@@ -202,7 +203,7 @@ def get_boundary_vals(u_mesh):
     return jnp.hstack((u_mesh[0,:], u_mesh[-1,:], u_mesh[:,0], u_mesh[:,-1]))
 
 def test_2d():
-    beta = 3
+    beta = 30
     #equation
     #u = lambda x,y: jnp.sin(91.3*jnp.pi*x)*jnp.sin(95.7*jnp.pi*y)
     u = lambda x,y: jnp.sin(x-beta*y)
