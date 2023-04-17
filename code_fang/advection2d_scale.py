@@ -291,7 +291,7 @@ if __name__ == '__main__':
 
     trick_list = [
              
-                {'equation':'Advection-Eq-scale' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 100000, 'beta': 77.2*np.  pi, 'beta_scale': 0.1},     
+                {'equation':'Advection-Eq-scale' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':1000.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 200000, 'beta': 97.2, 'beta_scale': 1},     
     ]
 
     for trick_paras in trick_list:

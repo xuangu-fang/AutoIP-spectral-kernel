@@ -50,9 +50,11 @@ class GPRLatent:
 
         # fix_kernel_paras =  {'log-w': np.log(1/trick_paras['Q'])*np.ones(trick_paras['Q']), 'log-ls': np.zeros(trick_paras['Q']), 'freq': np.linspace(0, 1, trick_paras['Q'])*100} if fix_dict is not None else None
 
-        fix_kernel_paras =  {'log-w': np.log(1/trick_paras['Q'])*np.ones(trick_paras['Q']), 'log-ls': np.zeros(trick_paras['Q']), 'freq': np.ones(trick_paras['Q'])} if fix_dict is not None else None        
+        fix_kernel_paras = None# {'log-w': np.log(1/trick_paras['Q'])*np.ones(trick_paras['Q']), 'log-ls': np.zeros(trick_paras['Q']), 'freq': np.ones(trick_paras['Q'])} if fix_dict is not None else None        
 
-        self.cov_func =  trick_paras['kernel'](fix_dict, None)
+        self.num = trick_paras['Q']
+
+        self.cov_func =  trick_paras['kernel'](fix_dict, None,trick_paras['Q'])
         
         self.kernel_matrix = Kernel_matrix(self.jitter, self.cov_func, 'NONE')
         self.Xte = X_test
@@ -60,6 +62,13 @@ class GPRLatent:
 
         print('equation is: ', self.trick_paras['equation'] )
         print('kernel is:', self.cov_func.__class__.__name__)
+
+        self.ln_s0 = 0.0
+        self.bg = 1e-5
+        self.b0 = 1e-5
+        self.PI = math.pi
+        self.ONE = 1.0
+        self.HALF = 0.5
 
     def KL_term(self, mu, L, K):
         Ltril = jnp.tril(L)
@@ -69,12 +78,13 @@ class GPRLatent:
         return kl
 
     @partial(jit, static_argnums=(0,))
-    def loss(self, params, key):
+    def loss(self, params, key,):
         u = params['u'] #function values at the collocation points
         u = u.sum(axis=1).reshape(-1,1) #sum over trick
         log_v = params['log_v'] #inverse variance for eq ll 
         log_tau = params['log_tau'] #inverse variance for boundary ll
         kernel_paras = params['kernel_paras']
+
         x_p = jnp.tile(self.X_con.flatten(), (self.N_con, 1)).T
         X1_p = x_p.flatten()
         X2_p = jnp.transpose(x_p).flatten()
@@ -84,14 +94,49 @@ class GPRLatent:
         log_prior = -0.5*jnp.linalg.slogdet(K)[1] - 0.5*jnp.sum(u*Kinv_u)
         #boundary
         log_boundary_ll = 0.5 * self.N * log_tau - 0.5 * jnp.exp(log_tau) * jnp.sum(jnp.square(u[self.Xind].reshape(-1) - self.y.reshape(-1)))
+
         #equation
         K_dxx1 = vmap(self.cov_func.DD_x1_kappa, (0, 0, None))(X1_p, X2_p, kernel_paras).reshape(self.N_con, self.N_con)
         u_xx = jnp.matmul(K_dxx1, Kinv_u)
         eq_ll = 0.5 * self.N_con * log_v - 0.5 * jnp.exp(log_v) * jnp.sum(jnp.square( u_xx.flatten() - self.src_col.flatten() ))
-        log_joint = log_prior + log_boundary_ll * self.llk_weight + eq_ll
+
+        # HS prior part loss
+        _tau_p, _v_p = self.update_aux(kernel_paras)
+        HS_loss = self.entropy_post(kernel_paras) + self.exp_prior(kernel_paras, _tau_p, _v_p)
+
+
+        log_joint = log_prior + log_boundary_ll * self.llk_weight + eq_ll + HS_loss
         return -log_joint
 
+    def exp_prior(self, params_HS, _tau_p, _v_p):
+        u_v = params_HS['u_v']
+        ln_s_v = params_HS['ln_s_v']
+        M_mu = params_HS['M_mu']
+        M_U = params_HS['M_U']
+        U = jnp.matmul(jnp.tril(M_U), jnp.tril(M_U).T)
+        exp_tau = (-1.5 * M_mu[self.num:, 0] - self.ONE / _tau_p * (jnp.exp(-M_mu[self.num:, 0] + 0.5 * (jnp.diag(M_U)[self.num:]**2)))).sum()
+        exp_v = (-1.5 * u_v - self.ONE / _v_p * (jnp.exp(-u_v + 0.5 * jnp.exp(ln_s_v)))).sum()
+        exp_w = (-0.5 * (M_mu[:self.num, 0]**2) / jnp.exp(self.ln_s0)).sum() + (-0.5 * (jnp.trace(U[:self.num, :self.num])) / jnp.exp(self.ln_s0)).sum()
+        return exp_tau + exp_v + exp_w
+    
 
+    def update_aux(self, params_HS):
+        u_v = params_HS['u_v']
+        ln_s_v = params_HS['ln_s_v']
+        M_mu = params_HS['M_mu']
+        M_U = params_HS['M_U']
+        _tau_p = jnp.exp(-M_mu[self.num:, 0] + 0.5 * (jnp.diag(M_U)[self.num:])**2) + 1 / self.b0**2
+        _v_p = jnp.exp(-u_v + 0.5 * jnp.exp(ln_s_v)) + 1 / self.bg**2
+        return _tau_p, _v_p
+
+    def entropy_post(self, params_HS):
+        u_v = params_HS['u_v']
+        ln_s_v = params_HS['ln_s_v']
+        M_U = params_HS['M_U']
+        U = jnp.matmul(jnp.tril(M_U), jnp.tril(M_U).T)
+        ent_v = (0.5 * ln_s_v + u_v).sum()
+        ent_M = 0.5 * jnp.linalg.slogdet(U)[1]
+        return ent_v + ent_M
 
     @partial(jit, static_argnums=(0,))
     def step(self, params, opt_state, key):
@@ -125,6 +170,9 @@ class GPRLatent:
 
     def train(self, nepoch):
         key = jax.random.PRNGKey(0)
+        self.cov_func.update_key(key)
+
+
         Q = self.trick_paras['Q'] #number of basis functions
 
         freq_scale = self.trick_paras['freq_scale']
@@ -132,17 +180,17 @@ class GPRLatent:
         params = {
             "log_tau": 0.0, #inv var for data ll
             "log_v": 0.0, #inv var for eq likelihood
-            "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.linspace(0, 1, Q)*freq_scale, 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1),'bias-poly': 0.5*np.ones(1)},
+            "kernel_paras": 
+            {
+            "u_v": np.array([0.0]),
+            "ln_s_v": np.array([0.0]),
+            'M_mu': np.zeros((Q * 2, 1)),
+            'M_U': np.eye(Q * 2),
+             'log-ls': np.zeros(Q), 
+             'freq': np.linspace(0, 1, Q)*freq_scale,
+               },
             "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
         }            
-
-        # params = {
-        #     "log_tau": 0.0, #inv var for data ll
-        #     "log_v": 0.0, #inv var for eq likelihood
-        #     "kernel_paras": {'log-w': np.log(1/Q)*np.ones(Q), 'log-ls': np.zeros(Q), 'freq': np.ones(Q), 'log-w-matern': np.zeros(1),'log-ls-matern': np.zeros(1),'bias-poly': 0.5*np.ones(1)},
-        #     "u": self.trick_paras['init_u_trick'](self, self.trick_paras), #u value on the collocation points
-        # }         
-
 
 
         opt_state = self.optimizer.init(params)
@@ -160,6 +208,10 @@ class GPRLatent:
         print("here")
         for i in tqdm.tqdm(range(nepoch)):
             key, sub_key = jax.random.split(key)
+            
+            self.cov_func.update_key(key)
+            # _tau_p, _v_p = self.update_aux(params['kernel_paras'])
+
             params, opt_state, loss = self.step(params, opt_state, sub_key)
             #if i % 10 == 0 or i >= 2000:
 
@@ -176,11 +228,22 @@ class GPRLatent:
                     print('loss = %g'%loss)
                     print("It ", i, '  loss = %g '%loss ," Relative L2 error", err)
 
+                u_v = params['kernel_paras']['u_v']
+                M_mu = params['kernel_paras']['M_mu']
+                s_M = M_mu
+                s_tau = jnp.exp(s_M[self.num:, 0]).reshape(1, -1)
+                s_w = s_M[:self.num, ].reshape(1, -1)
+                s_v = jnp.exp(u_v)
+                weights = s_tau * s_v* s_w**2
+                weights = weights.reshape(-1)    
+
+                print("\n selected weights ", weights[np.where(abs(weights) > 1e-3)[0]], "\n indices ", np.where(abs(weights) > 1e-3)[0])
+
 
 
                 loss_list.append(np.log(loss) if loss > 1 else loss)
                 err_list.append(err)
-                w_list.append(np.exp(params['kernel_paras']['log-w']))
+                w_list.append(weights)
                 freq_list.append(params['kernel_paras']['freq'])
                 ls_list.append(np.exp(params['kernel_paras']['log-ls']))
                 epoch_list.append(i)
@@ -210,7 +273,7 @@ def test_multi_scale(trick_paras,fix_dict=
         'poisson1d-single-sin':lambda x: jnp.sin(92.3*jnp.pi*x),
         'poisson1d-single-sin-low':lambda x: jnp.sin(jnp.pi*x),
         'poisson1d-x_time_sinx':lambda x: x*jnp.sin(50*jnp.pi*x),
-        'x2_add_sinx':lambda x: jnp.sin(72.6 *jnp.pi*x) - 2*(x-0.5)**2,
+        'poisson1d-x2_add_sinx':lambda x: jnp.sin(72.6 *jnp.pi*x) - 2*(x-0.5)**2,
     }
 
     u = equation_dict[trick_paras['equation']]
@@ -250,8 +313,7 @@ if __name__ == '__main__':
     trick_list = [
 
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
-        # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
-        {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
+        {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
               
                   ]
 
