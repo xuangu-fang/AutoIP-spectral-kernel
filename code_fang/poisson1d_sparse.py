@@ -70,6 +70,10 @@ class GPRLatent:
         self.ONE = 1.0
         self.HALF = 0.5
 
+        self.K_mean = 0.0
+        self.Kinv_u_mean = 0.0
+        self.Kmn_mean = 0.0
+
     def KL_term(self, mu, L, K):
         Ltril = jnp.tril(L)
         hh_expt = jnp.matmul(Ltril, Ltril.T) + jnp.matmul(mu, mu.T)
@@ -146,7 +150,7 @@ class GPRLatent:
         params = optax.apply_updates(params, updates)
         return params, opt_state, loss
 
-    @partial(jit, static_argnums=(0,))
+    # @partial(jit, static_argnums=(0,))
     def preds(self, params, Xte):
         ker_paras = params['kernel_paras']
         u = params['u']
@@ -157,6 +161,7 @@ class GPRLatent:
         X1_p = x_p.flatten()
         X2_p = jnp.transpose(x_p).flatten()
         K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, ker_paras)
+
         Kinv_u = jnp.linalg.solve(K, u)
 
         N_te = Xte.shape[0]
@@ -165,8 +170,9 @@ class GPRLatent:
         X1_p2 = x_p11.flatten()
         X2_p2 = jnp.transpose(x_p22).flatten()
         Kmn = vmap(self.cov_func.kappa, (0, 0, None))(X1_p2.flatten(), X2_p2.flatten(), ker_paras).reshape(N_te, self.N_con)
+        
         preds = jnp.matmul(Kmn, Kinv_u)
-        return preds
+        return preds, Kmn, Kinv_u, K
 
     def train(self, nepoch):
         key = jax.random.PRNGKey(0)
@@ -183,7 +189,9 @@ class GPRLatent:
             "kernel_paras": 
             {
             "u_v": np.array([0.0]),
+            # "u_v": np.log(0.01),
             "ln_s_v": np.array([0.0]),
+            # "ln_s_v": np.log(0.01),
             'M_mu': np.zeros((Q * 2, 1)),
             'M_U': np.eye(Q * 2),
              'log-ls': np.zeros(Q), 
@@ -213,31 +221,76 @@ class GPRLatent:
             # _tau_p, _v_p = self.update_aux(params['kernel_paras'])
 
             params, opt_state, loss = self.step(params, opt_state, sub_key)
-            #if i % 10 == 0 or i >= 2000:
-
-
+            
             # evluating the error with frequency epoch/20, store the loss and error in a list
 
             if i % (nepoch/20) == 0:
 
-                preds = self.preds(params, self.Xte)
+                preds, Kmn, Kinv_u, K = self.preds(params, self.Xte)
                 err = jnp.linalg.norm(preds.reshape(-1) - self.yte.reshape(-1))/jnp.linalg.norm(self.yte.reshape(-1))
+                
+                
+                
                 if True or err < min_err:
                     if err < min_err:
                         min_err = err
                     print('loss = %g'%loss)
                     print("It ", i, '  loss = %g '%loss ," Relative L2 error", err)
 
+                print('Kmn.mean:', Kmn.mean())
+                print('K.mean:', K.mean())
+                
+                print('Kinv_u.mean:', Kinv_u.mean())
+                print('K.trace:', jnp.trace(K))
+
+
+                # u_v = params['kernel_paras']['u_v']
+                # M_mu = params['kernel_paras']['M_mu']
+                # s_M = M_mu
+                # s_tau = jnp.exp(s_M[self.num:, 0]).reshape(1, -1)
+                # s_w = s_M[:self.num, ].reshape(1, -1)
+                # s_v = jnp.exp(u_v)
+                # weights = (s_tau * s_v* s_w**2).reshape(-1)
+                # weights = (s_tau**0.5  * s_v**0.5 * s_w).reshape(-1)
+
+                _, sub_key1 = jax.random.split(key)
+                _, sub_key2 = jax.random.split(key)
                 u_v = params['kernel_paras']['u_v']
+                ln_s_v = params['kernel_paras']['ln_s_v']
                 M_mu = params['kernel_paras']['M_mu']
-                s_M = M_mu
+                M_U = params['kernel_paras']['M_U']
+                L = jnp.tril(M_U)
+                s_M = M_mu + jnp.matmul(L, jax.random.normal(sub_key1, shape=(self.num * 2, 1)))
                 s_tau = jnp.exp(s_M[self.num:, 0]).reshape(1, -1)
                 s_w = s_M[:self.num, ].reshape(1, -1)
-                s_v = jnp.exp(u_v)
-                weights = s_tau * s_v* s_w**2
-                weights = weights.reshape(-1)    
+                s_v = jnp.exp(u_v + jax.random.normal(sub_key2, shape=(1, )) * jnp.exp(ln_s_v * 0.5))
+                weights = (s_tau  * s_v * s_w**2).reshape(-1)
 
-                print("\n selected weights ", weights[np.where(abs(weights) > 1e-3)[0]], "\n indices ", np.where(abs(weights) > 1e-3)[0])
+
+                # step by step calculation of kernel-diag(trace)
+                log_ls = params['kernel_paras']['log-ls']
+                freq = params['kernel_paras']['freq']
+
+                d = 0#zeros((self.N_con, 1)).reshape(-1)
+
+                matern = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2*jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+
+                cosine = jnp.cos(2*jnp.pi*d*freq)
+
+                hand_trace = (weights*matern*cosine).sum()*self.N_con
+
+                print('hand trace: ', hand_trace)
+
+                # weights = weights.reshape(-1)    
+                # weights = weights / jnp.sum(weights)
+
+                print("\n rel_weights: ", weights)
+                print('s_v: ', s_v)
+                print('s_tau: ', s_tau.reshape(-1))
+                print('s_w: ', s_w.reshape(-1))
+
+
+                print("\n selected rel_weights ", weights[np.where(abs(weights) > 1e-3)[0]], "\n indices ", np.where(abs(weights) > 1e-3)[0])
 
 
 
@@ -280,7 +333,7 @@ def test_multi_scale(trick_paras,fix_dict=
 
     # u = lambda x: jnp.sin(5*jnp.pi*x) + jnp.sin(23.7*jnp.pi*x) + jnp.cos(92.3*jnp.pi*x)
     #test points
-    M = 300
+    M = 3
     X_test = np.linspace(0, 1, num=M).reshape(-1, 1)
     Y_test = u(X_test)
     #collocation points
@@ -313,7 +366,13 @@ if __name__ == '__main__':
     trick_list = [
 
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
-        {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
+        # {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 }, 
+        # {'equation':'poisson1d-x2_add_sinx' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':200.0, 'kernel' : kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
+        # {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':200.0, 'kernel' : kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },
+        {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':200.0, 'kernel' : kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
+        # {'equation':'poisson1d-x2_add_sinx' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Sparse_SE_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
+        # {'equation':'poisson1d-x_time_sinx' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Sparse_SE_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
+        # {'equation':'poisson1d-x_time_sinx' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
               
                   ]
 

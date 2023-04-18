@@ -29,10 +29,7 @@ def make_fig_1d(model, params, log_dict):
 
         # first subplot
         plt.subplot(2, 3, 1)
-        preds = model.preds(params, model.Xte)
-        Xtr = model.X_col[model.Xind]
-
-        preds = model.preds(params, model.Xte)
+        preds,_,_,_ = model.preds(params, model.Xte)
         Xtr = model.X_col[model.Xind]
 
         plt.plot(model.Xte.flatten(), model.yte.flatten(), 'k-', label='Truth')
@@ -56,6 +53,12 @@ def make_fig_1d(model, params, log_dict):
         plt.subplot(2, 3, 4)
         for i in range(Q):
             plt.scatter(epoch_list, [w[i] for w in w_list], s=10)
+
+            # if the weight is significant, label each scatter plot with the corresponding id and freq 
+            weight = [w[i] for w in w_list][-1]
+            if weight > 1e-2:
+                plt.text(epoch_list[-1], weight, '%s-th_freq-%.1f'%(str(i),freq_list[-1][i]))
+
         plt.title('weights scatter')
 
         # fifth subplot: scatter of the freq at each test point, which store on the list freq_list, the x-axies is epoch, y-axis is the freq
@@ -68,6 +71,11 @@ def make_fig_1d(model, params, log_dict):
         plt.subplot(2, 3, 6)
         for i in range(Q):
             plt.scatter(epoch_list, [l[i] for l in ls_list], s=10)
+
+            # if the ls is significant, label each scatter plot with the corresponding id and freq
+            ls = [l[i] for l in ls_list][-1]
+            if ls > 1e-2:
+                plt.text(epoch_list[-1], ls, '%s-th_freq-%.1f'%(str(i),freq_list[-1][i]))
         plt.title('ls scatter')
 
 

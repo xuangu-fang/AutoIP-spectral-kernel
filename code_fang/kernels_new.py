@@ -91,6 +91,8 @@ class Kernel_1d(object):
         s_w = s_M[:self.num, ].reshape(1, -1)
         s_v = jnp.exp(u_v + jax.random.normal(sub_key2, shape=(1, )) * jnp.exp(ln_s_v * 0.5))
         weights = (s_tau  * s_v * s_w**2).reshape(-1)
+        # weights = (s_tau**0.5  * s_v**0.5 * s_w).reshape(-1)
+        # weights = weights / jnp.sum(weights)
 
         log_ls = paras['log-ls']
         freq = paras['freq']
@@ -103,7 +105,7 @@ class Kernel_1d(object):
 
 class Sparse_Matern52_Cos_1d(Kernel_1d):
 
-    ''' Spaese HS_prior +  variant Specture Mixsure kernal: 
+    ''' Sparse HS_prior +  variant Specture Mixsure kernal: 
       weight x Matern52 x cosine kernel'''
 
     def __init__(self, fix_dict=None, fix_paras=None, Q=30):
@@ -124,11 +126,27 @@ class Sparse_Matern52_Cos_1d(Kernel_1d):
         return (weights*matern*cosine).sum()
 
 
+class Sparse_SE_Cos_1d(Kernel_1d):
 
+    ''' Spaese HS_prior +  variant Specture Mixsure kernal: 
+      weight x SE x cosine kernel'''
 
+    def __init__(self, fix_dict=None, fix_paras=None, Q=30):
+        super().__init__(fix_dict, fix_paras)
+        self.num = Q
 
+    @partial(jit, static_argnums=(0, ))
+    def kappa(self, x1, y1, paras):
 
+        weights,  log_ls, freq = self.make_sparse_weight(paras)
 
+        d = jnp.abs(x1-y1)
+
+        SE =jnp.exp(-d**2*jnp.exp(log_ls))
+
+        cosine = jnp.cos(2*jnp.pi*d*freq)
+
+        return (weights*SE*cosine).sum()
 
 
 class SE_Cos_1d(Kernel_1d):

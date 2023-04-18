@@ -251,8 +251,8 @@ if __name__ == '__main__':
 
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},  
-        {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
-              
+        # {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },  
+        {'equation':'poisson1d-x_time_sinx' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 10000,'freq_scale':100 },  
                   ]
 
     for trick_paras in trick_list:
