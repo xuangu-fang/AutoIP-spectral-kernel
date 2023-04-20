@@ -97,7 +97,9 @@ class GPRLatent:
         # only the cov matrix of func vals
         K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, kernel_paras)
         Kinv_u = jnp.linalg.solve(K, u)
-        log_prior = -0.5*jnp.linalg.slogdet(K)[1] - 0.5*jnp.sum(u*Kinv_u)
+        log_prior = -0.5 * \
+            jnp.linalg.slogdet(
+                K)[1]*self.trick_paras['logdet'] - 0.5*jnp.sum(u*Kinv_u)
         # boundary
         log_boundary_ll = 0.5 * self.N * log_tau - 0.5 * \
             jnp.exp(
@@ -377,8 +379,10 @@ if __name__ == '__main__':
 
     trick_list = [
 
-        {'equation': 'poisson1d-single-sin', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2,
-            'llk_weight': 100.0, 'kernel': kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 50000, 'freq_scale': 100},
+        {'equation': 'poisson1d-x2_add_sinx', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2,
+            'llk_weight': 200.0, 'kernel': kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 50000, 'freq_scale': 100, 'logdet': True},
+        {'equation': 'poisson1d-x2_add_sinx', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2,
+            'llk_weight': 200.0, 'kernel': kernels_new.Sparse_Matern52_Cos_1d, 'nepoch': 50000, 'freq_scale': 100, 'logdet': False},
 
     ]
 

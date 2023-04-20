@@ -425,6 +425,8 @@ if __name__ == '__main__':
 
         {'equation': 'poisson1d-x2_add_sinx', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2,
             'llk_weight': 200.0, 'kernel': kernels_new.Block_Sparse_Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': False},
+        {'equation': 'poisson1d-x2_add_sinx', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2,
+            'llk_weight': 200.0, 'kernel': kernels_new.Block_Sparse_Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': True},
         # {'equation': 'poisson1d-single-sin-low', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2,
         #     'llk_weight': 200.0, 'kernel': kernels_new.Block_Sparse_Matern52_Cos_1d, 'nepoch': 20000, 'freq_scale': 50},
 

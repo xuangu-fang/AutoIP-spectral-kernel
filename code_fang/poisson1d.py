@@ -218,7 +218,7 @@ def test_multi_scale(trick_paras, fix_dict=None):
         'poisson1d-single-sin': lambda x: jnp.sin(92.3*jnp.pi*x),
         'poisson1d-single-sin-low': lambda x: jnp.sin(jnp.pi*x),
         'poisson1d-x_time_sinx': lambda x: x*jnp.sin(50*jnp.pi*x),
-        'x2_add_sinx': lambda x: jnp.sin(72.6 * jnp.pi*x) - 2*(x-0.5)**2,
+        'poisson1d-x2_add_sinx': lambda x: jnp.sin(72.6 * jnp.pi*x) - 2*(x-0.5)**2,
     }
 
     u = equation_dict[trick_paras['equation']]
@@ -260,8 +260,10 @@ if __name__ == '__main__':
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},
         # {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },
-        {'equation': 'poisson1d-mix-sin', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
+        {'equation': 'poisson1d-x2_add_sinx', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
             'lr': 1e-2, 'llk_weight': 100.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': False},
+        {'equation': 'poisson1d-x2_add_sinx', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
+            'lr': 1e-2, 'llk_weight': 100.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': True},
     ]
 
     for trick_paras in trick_list:
