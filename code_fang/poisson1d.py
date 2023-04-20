@@ -83,7 +83,9 @@ class GPRLatent:
         # only the cov matrix of func vals
         K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, kernel_paras)
         Kinv_u = jnp.linalg.solve(K, u)
-        log_prior = -0.5*jnp.linalg.slogdet(K)[1] - 0.5*jnp.sum(u*Kinv_u)
+        log_prior = -0.5 * \
+            jnp.linalg.slogdet(
+                K)[1]*self.trick_paras['logdet'] - 0.5*jnp.sum(u*Kinv_u)
         # log_prior = - 0.5*jnp.sum(u*Kinv_u)
 
         # boundary
@@ -259,7 +261,7 @@ if __name__ == '__main__':
         # {'equation':'poisson1d-mix' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_add_Matern_1d, 'nepoch': 1000},
         # {'equation':'poisson1d-mix-sin' ,'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30, 'lr': 1e-2, 'llk_weight':100.0, 'kernel' : kernels_new.Matern52_Cos_1d, 'nepoch': 100000,'freq_scale':100 },
         {'equation': 'poisson1d-mix-sin', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
-            'lr': 1e-2, 'llk_weight': 100.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100},
+            'lr': 1e-2, 'llk_weight': 100.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': False},
     ]
 
     for trick_paras in trick_list:

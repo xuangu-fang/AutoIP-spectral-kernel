@@ -113,8 +113,8 @@ def make_fig_1d(model, params, log_dict):
     if not os.path.exists(prefix):
         os.makedirs(prefix)
 
-    fig_name = 'llk_w-%.1f-' % (model.llk_weight) + model.trick_paras['init_u_trick'].__name__ + '-Q-%d-epoch-%d-lr-%.4f-freqscale=%d' % (
-        Q, nepoch, model.trick_paras['lr'], model.trick_paras['freq_scale'])
+    fig_name = 'llk_w-%.1f-' % (model.llk_weight) + model.trick_paras['init_u_trick'].__name__ + '-Q-%d-epoch-%d-lr-%.4f-freqscale=%d-logdet-%d' % (
+        Q, nepoch, model.trick_paras['lr'], model.trick_paras['freq_scale'], model.trick_paras['logdet'])
 
     print('save fig to ', prefix+fig_name+'.png')
 
