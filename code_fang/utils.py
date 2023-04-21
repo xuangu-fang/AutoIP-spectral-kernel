@@ -6,7 +6,19 @@ import os
 import pickle
 
 
-def save_paras(model, params, log_dict):
+def identity(x):
+    return x
+
+
+def square_norm(x):
+    return x**2/jnp.sum(x**2)
+
+
+def soft_max(x):
+    return jnp.exp(x)/jnp.sum(jnp.exp(x))
+
+
+def save_paras(model, params, log_dict, other_paras=''):
 
     Q = model.trick_paras['Q']
     nepoch = model.trick_paras['nepoch']
@@ -19,14 +31,14 @@ def save_paras(model, params, log_dict):
         os.makedirs(prefix)
 
     fig_name = 'llk_w-%.1f-' % (model.llk_weight) + model.trick_paras['init_u_trick'].__name__ + '-Q-%d-epoch-%d-lr-%.4f-freqscale=%d' % (
-        Q, nepoch, model.trick_paras['lr'], model.trick_paras['freq_scale'])
+        Q, nepoch, model.trick_paras['lr'], model.trick_paras['freq_scale']) + other_paras
 
     # save the params and log_dict as pickle
     with open(prefix + fig_name + '.pickle', 'wb') as f:
         pickle.dump([params, log_dict], f)
 
 
-def make_fig_1d(model, params, log_dict):
+def make_fig_1d(model, params, log_dict, other_paras=''):
 
     # plot a figure with 6 subplots. 1 for the truth- prediction, 2 for the loss curve, 3 for the error curve, 4,5,6 for scatter of the weights, freq, and ls
 
@@ -113,8 +125,8 @@ def make_fig_1d(model, params, log_dict):
     if not os.path.exists(prefix):
         os.makedirs(prefix)
 
-    fig_name = 'llk_w-%.1f-' % (model.llk_weight) + model.trick_paras['init_u_trick'].__name__ + '-Q-%d-epoch-%d-lr-%.4f-freqscale=%d-logdet-%d' % (
-        Q, nepoch, model.trick_paras['lr'], model.trick_paras['freq_scale'], model.trick_paras['logdet'])
+    fig_name = 'llk_w-%.1f-' % (model.llk_weight) + model.trick_paras['init_u_trick'].__name__ + '-nU-%d-Q-%d-epoch-%d-lr-%.4f-freqscale=%d-logdet-%d' % (
+        num_u_trick, Q, nepoch, model.trick_paras['lr'], model.trick_paras['freq_scale'], model.trick_paras['logdet']) + other_paras
 
     print('save fig to ', prefix+fig_name+'.png')
 

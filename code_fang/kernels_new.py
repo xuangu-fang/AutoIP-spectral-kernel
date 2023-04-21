@@ -106,6 +106,35 @@ class Kernel_1d(object):
         return weights,  log_ls, freq
 
     @partial(jit, static_argnums=(0, ))
+    def make_sparse_weight_local_only(self, paras):
+        key, sub_key1 = jax.random.split(self.key)
+        key, sub_key2 = jax.random.split(self.key)
+        # u_v = paras['u_v']  # gloabl variance - mean
+        # ln_s_v = paras['ln_s_v']  # gloabl variance - var
+        M_mu = paras['M_mu']  # (local variance, Gaussian noise) 2Q*1
+        M_U = paras['M_U']  # 2Q x 2Q
+        L = jnp.tril(M_U)
+        s_M = M_mu + \
+            jnp.matmul(L, jax.random.normal(
+                sub_key1, shape=(self.num * 2, 1)))  # 2Q*1
+        s_tau = jnp.exp(s_M[self.num:, 0]).reshape(1, -1)
+        s_w = s_M[:self.num, ].reshape(1, -1)
+        # s_v = jnp.exp(u_v + jax.random.normal(sub_key2,
+        #               shape=(1, )) * jnp.exp(ln_s_v * 0.5))
+        # weights = ( s_v * s_w**2).reshape(-1)
+
+        # weights = (s_tau**0.5 * s_w).reshape(-1)
+        # weights = weights / jnp.sum(weights)
+
+        weights = (s_tau**0.5 * s_w).reshape(-1)
+        weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
+
+        log_ls = paras['log-ls']
+        freq = paras['freq']
+
+        return weights,  log_ls, freq
+
+    @partial(jit, static_argnums=(0, ))
     def make_block_sparse_weight(self, paras):
         key, sub_key1 = jax.random.split(self.key)
         key, sub_key2 = jax.random.split(self.key)
@@ -207,6 +236,36 @@ class Sparse_Matern52_Cos_1d(Kernel_1d):
     def kappa(self, x1, y1, paras):
 
         weights,  log_ls, freq = self.make_sparse_weight(paras)
+
+        # softmax weights
+        # weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
+
+        # rescale weights
+        # weights = weights / jnp.sum(weights)
+
+        d = jnp.abs(x1-y1)
+
+        matern = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
+                  jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+
+        cosine = jnp.cos(2*jnp.pi*d*freq)
+
+        return (weights*matern*cosine).sum()
+
+
+class Local_Sparse_Matern52_Cos_1d(Kernel_1d):
+
+    ''' Sparse HS_prior +  variant Specture Mixsure kernal:
+      weight x Matern52 x cosine kernel'''
+
+    def __init__(self, fix_dict=None, fix_paras=None, Q=30):
+        super().__init__(fix_dict, fix_paras)
+        self.num = Q
+
+    @ partial(jit, static_argnums=(0, ))
+    def kappa(self, x1, y1, paras):
+
+        weights,  log_ls, freq = self.make_sparse_weight_local_only(paras)
 
         # softmax weights
         # weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
