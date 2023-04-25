@@ -133,8 +133,8 @@ def make_fig_1d(model, params, log_dict, other_paras=''):
     plt.savefig(prefix+fig_name + '.png')
 
 
-def make_fig_2d(model, params, log_dict, extra_name='', fontsize=36):
-
+def make_fig_2d(model, params, log_dict,  other_paras=''):
+    fontsize = 36
     # plot a figure with 9 subplots. 1 for the truth- prediction, 2 for the loss curve, 3 for the error curve, {4,5,6} for scatter of the weights, freq, and ls for x1, {7,8,9} for scatter of the weights, freq, and ls for x2
 
     loss_list = log_dict['loss_list']
@@ -174,8 +174,16 @@ def make_fig_2d(model, params, log_dict, extra_name='', fontsize=36):
     # fourth subplot: scatter of the weights at each test point, which store on the list w_list, the x-axies is epoch, y-axis is the weights, make the marker size smaller to make the plot clearer
 
     plt.subplot(3, 3, 4)
+    # for i in range(Q):
+    #     plt.scatter(epoch_list, [w[i] for w in w_list_k1], s=10)
     for i in range(Q):
         plt.scatter(epoch_list, [w[i] for w in w_list_k1], s=10)
+
+        # if the weight is significant, label each scatter plot with the corresponding id and freq
+        weight = [w[i] for w in w_list_k1][-1]
+        if weight > 1e-2:
+            plt.text(epoch_list[-1], weight, '%s-th_freq-%.1f' %
+                     (str(i), freq_list_k1[-1][i]))
     plt.title('weights scatter-k1', fontsize=fontsize*0.5)
 
     # fifth subplot: scatter of the freq at each test point, which store on the list freq_list, the x-axies is epoch, y-axis is the freq
@@ -186,13 +194,28 @@ def make_fig_2d(model, params, log_dict, extra_name='', fontsize=36):
 
     # sixth subplot: scatter of the ls at each test point, which store on the list ls_list, the x-axies is epoch, y-axis is the ls
     plt.subplot(3, 3, 6)
+
     for i in range(Q):
         plt.scatter(epoch_list, [l[i] for l in ls_list_k1], s=10)
+
+        # if the ls is significant, label each scatter plot with the corresponding id and freq
+        ls = [l[i] for l in ls_list_k1][-1]
+        if ls > 1e-2:
+            plt.text(epoch_list[-1], ls, '%s-th_freq-%.1f' %
+                     (str(i), freq_list_k1[-1][i]))
+
     plt.title('ls scatter-k1', fontsize=fontsize*0.5)
 
     plt.subplot(3, 3, 7)
     for i in range(Q):
         plt.scatter(epoch_list, [w[i] for w in w_list_k2], s=10)
+
+        # if the weight is significant, label each scatter plot with the corresponding id and freq
+        weight = [w[i] for w in w_list_k2][-1]
+        if weight > 1e-2:
+            plt.text(epoch_list[-1], weight, '%s-th_freq-%.1f' %
+                     (str(i), freq_list_k2[-1][i]))
+
     plt.title('weights scatter-k2', fontsize=fontsize*0.5)
 
     plt.subplot(3, 3, 8)
@@ -203,6 +226,13 @@ def make_fig_2d(model, params, log_dict, extra_name='', fontsize=36):
     plt.subplot(3, 3, 9)
     for i in range(Q):
         plt.scatter(epoch_list, [l[i] for l in ls_list_k2], s=10)
+
+        # if the ls is significant, label each scatter plot with the corresponding id and freq
+        ls = [l[i] for l in ls_list_k2][-1]
+        if ls > 1e-2:
+            plt.text(epoch_list[-1], ls, '%s-th_freq-%.1f' %
+                     (str(i), freq_list_k2[-1][i]))
+
     plt.title('ls scatter-k2', fontsize=fontsize*0.5)
 
     fix_prefix_dict = {1: '_fix_', 0: '_nonfix_'}
@@ -214,7 +244,7 @@ def make_fig_2d(model, params, log_dict, extra_name='', fontsize=36):
     plt.suptitle(fix_prefix + '\n'+model.trick_paras['init_u_trick'].__name__ + '-nU-%d-Q-%d-epoch-%d-lr-%.4f' % (
         num_u_trick, Q, nepoch, model.trick_paras['lr']), fontsize=fontsize)
 
-    prefix = 'result_analysis/' + model.trick_paras['equation'] + extra_name + \
+    prefix = 'result_analysis/' + model.trick_paras['equation'] + \
         '/kernel_'+model.cov_func.__class__.__name__ + \
         '/epoch_'+str(nepoch)+'/Q'+str(Q)+'/'
 
@@ -222,8 +252,8 @@ def make_fig_2d(model, params, log_dict, extra_name='', fontsize=36):
     if not os.path.exists(prefix):
         os.makedirs(prefix)
 
-    fig_name = fix_prefix + 'llk_w-%.1f-' % (model.llk_weight) + model.trick_paras['init_u_trick'].__name__ + '-nu-%d-Q-%d-epoch-%d-lr-%.4f' % (
-        num_u_trick, Q, nepoch, model.trick_paras['lr'])
+    fig_name = fix_prefix + 'llk_w-%.1f-' % (model.llk_weight) + model.trick_paras['init_u_trick'].__name__ + '-nu-%d-Q-%d-epoch-%d-lr-%.4f-freqscale=%d-logdet-%d' % (
+        num_u_trick, Q, nepoch, model.trick_paras['lr'], model.trick_paras['freq_scale'], model.trick_paras['logdet'])+other_paras
     print('save fig to ', prefix+fig_name)
 
     plt.savefig(prefix+fig_name+'.png')

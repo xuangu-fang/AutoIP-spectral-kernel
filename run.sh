@@ -1,3 +1,3 @@
-python code_fang/poisson1d_block_sparse.py
-python code_fang/poisson1d.py
+python code_fang/allencahn1d.py
+python code_fang/allencahn2d.py
 

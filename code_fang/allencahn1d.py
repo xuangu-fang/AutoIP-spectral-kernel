@@ -218,8 +218,11 @@ def test_multi_scale(trick_paras, fix_dict=None):
     # equation
     equation_dict = {
         'allencahn1d-single-sin': lambda x: jnp.sin(92.3*2*jnp.pi*x),
-        'allencahn1d-mix-sin': lambda x: jnp.sin(92.3*2*jnp.pi*x) + jnp.sin(23.7*2*jnp.pi*x) + jnp.cos(5.4*2*jnp.pi*x),
+        'allencahn1d-mix-sin': lambda x:  jnp.sin(92.3*2*jnp.pi*x) + jnp.sin(23.7*2*jnp.pi*x) + jnp.cos(5.4*2*jnp.pi*x),
         'allencahn1d-x2_add_sinx': lambda x: jnp.sin(72.6 * jnp.pi*x) - 2*(x-0.5)**2,
+        'allencahn1d-sincos': lambda x: jnp.sin(92.3*jnp.pi*x)*jnp.cos(27.8*2*jnp.pi*x),
+
+
 
     }
 
@@ -262,11 +265,9 @@ if __name__ == '__main__':
         # {'equation': 'allencahn1d-single-sin', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
         #     'lr': 1e-2, 'llk_weight': 100.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': True},
 
-        {'equation': 'allencahn1d-mix-sin', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
-            'lr': 1e-2, 'llk_weight': 100.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': True},
+        {'equation': 'allencahn1d-sincos', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
+            'lr': 1e-2, 'llk_weight': 200.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': True},
 
-        {'equation': 'allencahn1d-x2_add_sinx', 'init_u_trick': init_func.zeros, 'num_u_trick': 1, 'Q': 30,
-                     'lr': 1e-2, 'llk_weight': 100.0, 'kernel': kernels_new.Matern52_Cos_1d, 'nepoch': 100000, 'freq_scale': 100, 'logdet': True},
 
 
     ]
