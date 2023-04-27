@@ -8,7 +8,6 @@ import jax
 import math
 
 config.update("jax_enable_x64", True)
-
 '''base kernel class for 1d'''
 
 
@@ -93,8 +92,8 @@ class Kernel_1d(object):
                 sub_key1, shape=(self.num * 2, 1)))  # 2Q*1
         s_tau = jnp.exp(s_M[self.num:, 0]).reshape(1, -1)
         s_w = s_M[:self.num, ].reshape(1, -1)
-        s_v = jnp.exp(u_v + jax.random.normal(sub_key2,
-                      shape=(1, )) * jnp.exp(ln_s_v * 0.5))
+        s_v = jnp.exp(u_v + jax.random.normal(sub_key2, shape=(1, )) *
+                      jnp.exp(ln_s_v * 0.5))
         weights = (s_tau * s_v * s_w**2).reshape(-1)
 
         # weights = (s_tau**0.5  * s_v**0.5 * s_w).reshape(-1)
@@ -103,7 +102,7 @@ class Kernel_1d(object):
         log_ls = paras['log-ls']
         freq = paras['freq']
 
-        return weights,  log_ls, freq
+        return weights, log_ls, freq
 
     @partial(jit, static_argnums=(0, ))
     def make_sparse_weight_local_only(self, paras):
@@ -127,12 +126,12 @@ class Kernel_1d(object):
         # weights = weights / jnp.sum(weights)
 
         weights = (s_tau**0.5 * s_w).reshape(-1)
-        weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
+        weights = jnp.exp(weights) / jnp.sum(jnp.exp(weights))
 
         log_ls = paras['log-ls']
         freq = paras['freq']
 
-        return weights,  log_ls, freq
+        return weights, log_ls, freq
 
     @partial(jit, static_argnums=(0, ))
     def make_block_sparse_weight(self, paras):
@@ -152,13 +151,13 @@ class Kernel_1d(object):
 
         s_w = s_M[:, 1].reshape(1, -1)
 
-        s_v = jnp.exp(u_v + jax.random.normal(sub_key2,
-                      shape=(1, )) * jnp.exp(ln_s_v * 0.5))
+        s_v = jnp.exp(u_v + jax.random.normal(sub_key2, shape=(1, )) *
+                      jnp.exp(ln_s_v * 0.5))
 
         # weights = (s_tau * s_v * s_w**2).reshape(-1)
 
         weights = (s_tau**0.5 * s_w).reshape(-1)
-        weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
+        weights = jnp.exp(weights) / jnp.sum(jnp.exp(weights))
 
         # weights = (s_tau**0.5 * s_v**0.5 * s_w).reshape(-1)
         # weights = (s_tau * s_w**2).reshape(-1)
@@ -167,14 +166,17 @@ class Kernel_1d(object):
         log_ls = paras['log-ls']
         freq = paras['freq']
 
-        return weights,  log_ls, freq
+        return weights, log_ls, freq
 
     def update_key(self, key):
         self.key = key
 
+    def update_fix_set(self, fix_dict, fix_paras):
+        self.fix_dict = fix_dict
+        self.fix_paras = fix_paras
+
 
 class Block_Sparse_Matern52_Cos_1d(Kernel_1d):
-
     ''' Block Sparse HS_prior +  variant Specture Mixsure kernal:
       weight x SE x cosine kernel'''
 
@@ -185,20 +187,20 @@ class Block_Sparse_Matern52_Cos_1d(Kernel_1d):
     @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
-        weights,  log_ls, freq = self.make_block_sparse_weight(paras)
+        weights, log_ls, freq = self.make_block_sparse_weight(paras)
 
-        d = jnp.abs(x1-y1)
+        d = jnp.abs(x1 - y1)
 
-        matern = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
-                  jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+        matern = (1 + jnp.sqrt(5) * d * jnp.exp(log_ls) +
+                  5 / 3 * d**2 * jnp.exp(log_ls)**2) * jnp.exp(
+                      -jnp.sqrt(5) * d * jnp.exp(log_ls))
 
-        cosine = jnp.cos(2*jnp.pi*d*freq)
+        cosine = jnp.cos(2 * jnp.pi * d * freq)
 
-        return (weights*matern*cosine).sum()
+        return (weights * matern * cosine).sum()
 
 
 class Block_Sparse_SE_Cos_1d(Kernel_1d):
-
     ''' Block Sparse HS_prior +  variant Specture Mixsure kernal:
       weight x Matern52 x cosine kernel'''
 
@@ -209,22 +211,21 @@ class Block_Sparse_SE_Cos_1d(Kernel_1d):
     @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
-        weights,  log_ls, freq = self.make_block_sparse_weight(paras)
+        weights, log_ls, freq = self.make_block_sparse_weight(paras)
 
-        d = jnp.abs(x1-y1)
+        d = jnp.abs(x1 - y1)
 
         # matern = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
         #   jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
 
-        SE = jnp.exp(-d**2*jnp.exp(log_ls))
+        SE = jnp.exp(-d**2 * jnp.exp(log_ls))
 
-        cosine = jnp.cos(2*jnp.pi*d*freq)
+        cosine = jnp.cos(2 * jnp.pi * d * freq)
 
-        return (weights*SE*cosine).sum()
+        return (weights * SE * cosine).sum()
 
 
 class Sparse_Matern52_Cos_1d(Kernel_1d):
-
     ''' Sparse HS_prior +  variant Specture Mixsure kernal:
       weight x Matern52 x cosine kernel'''
 
@@ -232,10 +233,10 @@ class Sparse_Matern52_Cos_1d(Kernel_1d):
         super().__init__(fix_dict, fix_paras)
         self.num = Q
 
-    @ partial(jit, static_argnums=(0, ))
+    @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
-        weights,  log_ls, freq = self.make_sparse_weight(paras)
+        weights, log_ls, freq = self.make_sparse_weight(paras)
 
         # softmax weights
         # weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
@@ -243,18 +244,18 @@ class Sparse_Matern52_Cos_1d(Kernel_1d):
         # rescale weights
         # weights = weights / jnp.sum(weights)
 
-        d = jnp.abs(x1-y1)
+        d = jnp.abs(x1 - y1)
 
-        matern = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
-                  jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+        matern = (1 + jnp.sqrt(5) * d * jnp.exp(log_ls) +
+                  5 / 3 * d**2 * jnp.exp(log_ls)**2) * jnp.exp(
+                      -jnp.sqrt(5) * d * jnp.exp(log_ls))
 
-        cosine = jnp.cos(2*jnp.pi*d*freq)
+        cosine = jnp.cos(2 * jnp.pi * d * freq)
 
-        return (weights*matern*cosine).sum()
+        return (weights * matern * cosine).sum()
 
 
 class Local_Sparse_Matern52_Cos_1d(Kernel_1d):
-
     ''' Sparse HS_prior +  variant Specture Mixsure kernal:
       weight x Matern52 x cosine kernel'''
 
@@ -262,10 +263,10 @@ class Local_Sparse_Matern52_Cos_1d(Kernel_1d):
         super().__init__(fix_dict, fix_paras)
         self.num = Q
 
-    @ partial(jit, static_argnums=(0, ))
+    @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
-        weights,  log_ls, freq = self.make_sparse_weight_local_only(paras)
+        weights, log_ls, freq = self.make_sparse_weight_local_only(paras)
 
         # softmax weights
         # weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
@@ -273,18 +274,18 @@ class Local_Sparse_Matern52_Cos_1d(Kernel_1d):
         # rescale weights
         # weights = weights / jnp.sum(weights)
 
-        d = jnp.abs(x1-y1)
+        d = jnp.abs(x1 - y1)
 
-        matern = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
-                  jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+        matern = (1 + jnp.sqrt(5) * d * jnp.exp(log_ls) +
+                  5 / 3 * d**2 * jnp.exp(log_ls)**2) * jnp.exp(
+                      -jnp.sqrt(5) * d * jnp.exp(log_ls))
 
-        cosine = jnp.cos(2*jnp.pi*d*freq)
+        cosine = jnp.cos(2 * jnp.pi * d * freq)
 
-        return (weights*matern*cosine).sum()
+        return (weights * matern * cosine).sum()
 
 
 class Sparse_SE_Cos_1d(Kernel_1d):
-
     ''' Spaese HS_prior +  variant Specture Mixsure kernal:
       weight x SE x cosine kernel'''
 
@@ -292,10 +293,10 @@ class Sparse_SE_Cos_1d(Kernel_1d):
         super().__init__(fix_dict, fix_paras)
         self.num = Q
 
-    @ partial(jit, static_argnums=(0, ))
+    @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
-        weights,  log_ls, freq = self.make_sparse_weight(paras)
+        weights, log_ls, freq = self.make_sparse_weight(paras)
 
         # softmax weights
         # weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
@@ -303,13 +304,13 @@ class Sparse_SE_Cos_1d(Kernel_1d):
         # rescale weights
         # weights = weights / jnp.sum(weights)
 
-        d = jnp.abs(x1-y1)
+        d = jnp.abs(x1 - y1)
 
-        SE = jnp.exp(-d**2*jnp.exp(log_ls))
+        SE = jnp.exp(-d**2 * jnp.exp(log_ls))
 
-        cosine = jnp.cos(2*jnp.pi*d*freq)
+        cosine = jnp.cos(2 * jnp.pi * d * freq)
 
-        return (weights*SE*cosine).sum()
+        return (weights * SE * cosine).sum()
 
 
 class SE_Cos_1d(Kernel_1d):
@@ -319,33 +320,34 @@ class SE_Cos_1d(Kernel_1d):
     def __init__(self, fix_dict=None, fix_paras=None):
         super().__init__(fix_dict, fix_paras)
 
-    @ partial(jit, static_argnums=(0, ))
+    @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
         log_w, log_ls, freq = self.frezze_paras(paras)
 
-        return (jnp.exp(log_w)*jnp.exp(-(x1-y1)**2*jnp.exp(log_ls))*jnp.cos(2*jnp.pi*(x1-y1)*freq)).sum()
+        return (jnp.exp(log_w) * jnp.exp(-(x1 - y1)**2 * jnp.exp(log_ls)) *
+                jnp.cos(2 * jnp.pi * (x1 - y1) * freq)).sum()
 
 
 class Matern52_Cos_1d(Kernel_1d):
-
     '''variant Specture Mixsure kernal:
       weight x Matern52 x cosine kernel'''
 
     def __init__(self, fix_dict=None, fix_paras=None):
         super().__init__(fix_dict, fix_paras)
 
-    @ partial(jit, static_argnums=(0, ))
+    @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
         log_w, log_ls, freq = self.frezze_paras(paras)
 
-        d = jnp.abs(x1-y1)
+        d = jnp.abs(x1 - y1)
 
-        matern = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
-                  jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+        matern = (1 + jnp.sqrt(5) * d * jnp.exp(log_ls) +
+                  5 / 3 * d**2 * jnp.exp(log_ls)**2) * jnp.exp(
+                      -jnp.sqrt(5) * d * jnp.exp(log_ls))
 
-        cosine = jnp.cos(2*jnp.pi*d*freq)
+        cosine = jnp.cos(2 * jnp.pi * d * freq)
 
         weights = jnp.exp(log_w)
 
@@ -355,37 +357,63 @@ class Matern52_Cos_1d(Kernel_1d):
         # softmax weights
         # weights = jnp.exp(weights)/jnp.sum(jnp.exp(weights))
 
-        return (weights*matern*cosine).sum()
+        return (weights * matern * cosine).sum()
 
 
 class Matern52_Cos_add_Matern_1d(Kernel_1d):
-
     '''variant Specture Mixsure kernal:
       weight x Matern52 x cosine kernel + seperate Matern52 kernel'''
 
     def __init__(self, fix_dict=None, fix_paras=None):
         super().__init__(fix_dict, fix_paras)
 
-    @ partial(jit, static_argnums=(0, ))
+    @partial(jit, static_argnums=(0, ))
+    def frezze_paras_add_Matern(self, paras):
+
+        if self.fix_dict is not None and self.fix_paras is not None:
+
+            log_w = self.fix_dict['log-w']*self.fix_paras['log-w'] + \
+                (1-self.fix_dict['log-w'])*paras['log-w']
+            log_ls = self.fix_dict['log-ls']*self.fix_paras['log-ls'] + \
+                (1-self.fix_dict['log-ls'])*paras['log-ls']
+            freq = self.fix_dict['freq']*self.fix_paras['freq'] + \
+                (1-self.fix_dict['freq'])*paras['freq']
+
+            log_w_matern = self.fix_dict['log-w-matern']*self.fix_paras['log-w-matern'] + \
+                (1-self.fix_dict['log-w-matern'])*paras['log-w-matern']
+            log_ls_matern = self.fix_dict['log-ls-matern']*self.fix_paras['log-ls-matern'] + \
+                (1-self.fix_dict['log-ls-matern'])*paras['log-ls-matern']
+
+        else:
+            log_w = paras['log-w']
+            log_ls = paras['log-ls']
+            freq = paras['freq']
+            log_w_matern = paras['log-w-matern']
+            log_ls_matern = paras['log-ls-matern']
+
+        return log_w, log_ls, freq, log_w_matern, log_ls_matern
+
+    @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
 
-        log_w, log_ls, freq = self.frezze_paras(paras)
+        log_w, log_ls, freq, log_w_matern, log_ls_matern = self.frezze_paras_add_Matern(
+            paras)
 
-        log_w_matern = paras['log-w-matern']
-        log_ls_matern = paras['log-ls-matern']
+        d = jnp.abs(x1 - y1)
 
-        d = jnp.abs(x1-y1)
+        matern_coef = (1 + jnp.sqrt(5) * d * jnp.exp(log_ls) +
+                       5 / 3 * d**2 * jnp.exp(log_ls)**2) * jnp.exp(
+                           -jnp.sqrt(5) * d * jnp.exp(log_ls))
 
-        matern_coef = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
-                       jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
+        cosine = jnp.cos(2 * jnp.pi * d * freq)
 
-        cosine = jnp.cos(2*jnp.pi*d*freq)
-
-        matern_single = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls_matern) + 5/3*d**2 *
-                         jnp.exp(log_ls_matern)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls_matern))
+        matern_single = (1 + jnp.sqrt(5) * d * jnp.exp(log_ls_matern) +
+                         5 / 3 * d**2 * jnp.exp(log_ls_matern)**2) * jnp.exp(
+                             -jnp.sqrt(5) * d * jnp.exp(log_ls_matern))
 
         # add with sepearate matern kernel
-        return (jnp.exp(log_w)*cosine*matern_coef).sum() + (jnp.exp(log_w_matern)*matern_single).sum()
+        return (jnp.exp(log_w) * cosine * matern_coef).sum() + (
+            jnp.exp(log_w_matern) * matern_single).sum()
 
 
 class Matern52_1d(Kernel_1d):
@@ -393,21 +421,17 @@ class Matern52_1d(Kernel_1d):
     def __init__(self, fix_dict=None, fix_paras=None):
         super().__init__(fix_dict, fix_paras)
 
-    @ partial(jit, static_argnums=(0, ))
+    @partial(jit, static_argnums=(0, ))
     def kappa(self, x1, y1, paras):
-        log_w, log_ls, freq = self.frezze_paras(paras)
+
         log_w_matern = paras['log-w-matern']
         # log_w_matern = 1.0
 
         log_ls_matern = paras['log-ls-matern']
-        d = jnp.abs(x1-y1)
+        d = jnp.abs(x1 - y1)
 
-        matern_single = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls_matern) + 5/3*d**2 *
-                         jnp.exp(log_ls_matern)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls_matern))
+        matern_single = (1 + jnp.sqrt(5) * d * jnp.exp(log_ls_matern) +
+                         5 / 3 * d**2 * jnp.exp(log_ls_matern)**2) * jnp.exp(
+                             -jnp.sqrt(5) * d * jnp.exp(log_ls_matern))
 
-        matern_coef = (1 + jnp.sqrt(5)*d*jnp.exp(log_ls) + 5/3*d**2 *
-                       jnp.exp(log_ls)**2)*jnp.exp(-jnp.sqrt(5)*d*jnp.exp(log_ls))
-
-        # return (jnp.exp(log_w)*matern_coef).sum()
-
-        return (jnp.exp(log_w_matern)*matern_single).sum()
+        return (jnp.exp(log_w_matern) * matern_single).sum()
