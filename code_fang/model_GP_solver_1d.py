@@ -19,7 +19,11 @@ import copy
 import init_func
 
 
-class GPRLatent:
+'''GP solver class for 1d dynamics with single kernel,
+ now support poisson-1d and allen-cahn-1d'''
+
+
+class GP_solver_1d_single(object):
 
     # equation: u_{xx}  = f(x)
     # Xind: the indices of X_col that corresponds to training points, i.e., boundary points
@@ -61,52 +65,269 @@ class GPRLatent:
         self.params = None  # to be assugned after training the mixture-GP
         self.pred_func = None  # to be assugned when starting prediction
 
+        self.eq_type = trick_paras['equation'].split('-')[0]
+        assert self.eq_type in ['poisson_1d', 'allencahn_1d']
+
         print('equation is: ', self.trick_paras['equation'])
         print('kernel is:', self.cov_func.__class__.__name__)
 
-        # extra kernel trick for faster convergence
-        if trick_paras['kernel_extra'] is not None:
-
-            print('kernel_extra is:', self.cov_func_extra.__class__.__name__)
-            self.cov_func_extra = trick_paras['kernel_extra']()
-            self.kernel_matrix_extra = Kernel_matrix(self.jitter,
-                                                     self.cov_func_extra)
-            self.optimizer_extra = optax.adam(learning_rate=trick_paras['lr'])
-
     @partial(jit, static_argnums=(0, ))
-    def loss(self, params, key):
+    def value_and_grad_kernel(self, params, key):
+        '''compute the value of the kernel matrix, along with Kinv_u and u_xx'''
+
         u = params['u']  # function values at the collocation points
-        u = u.sum(axis=1).reshape(-1, 1)  # sum over trick
-        log_v = params['log_v']  # inverse variance for eq ll
-        log_tau = params['log_tau']  # inverse variance for boundary ll
         kernel_paras = params['kernel_paras']
         x_p = jnp.tile(self.X_con.flatten(), (self.N_con, 1)).T
         X1_p = x_p.flatten()
         X2_p = jnp.transpose(x_p).flatten()
         # only the cov matrix of func vals
         K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, kernel_paras)
-        Kinv_u = jnp.linalg.solve(K, u)
-        log_prior = -0.5 * \
-            jnp.linalg.slogdet(
-                K)[1]*self.trick_paras['logdet'] - 0.5*jnp.sum(u*Kinv_u)
-        # log_prior = - 0.5*jnp.sum(u*Kinv_u)
 
-        # boundary
-        log_boundary_ll = 0.5 * self.N * log_tau - 0.5 * \
-            jnp.exp(
-                log_tau) * jnp.sum(jnp.square(u[self.Xind].reshape(-1) - self.y.reshape(-1)))
-        # equation
+        Kinv_u = jnp.linalg.solve(K, u)
+
         K_dxx1 = vmap(self.cov_func.DD_x1_kappa,
                       (0, 0, None))(X1_p, X2_p, kernel_paras).reshape(
                           self.N_con, self.N_con)
         u_xx = jnp.matmul(K_dxx1, Kinv_u)
 
+        return K, Kinv_u, u_xx
+
+    @partial(jit, static_argnums=(0, ))
+    def boundary_and_eq_gap(self, u, u_xx):
+        """compute the boundary and equation gap, to construct the training loss or computing the early stopping criteria"""
+        # boundary
+        boundary_gap = jnp.sum(jnp.square(u[self.Xind].reshape(-1) -
+                                          self.y.reshape(-1)))
+        # equation
+        if self.eq_type == 'poisson_1d':
+
+            eq_gap = jnp.sum(jnp.square(
+                u_xx.flatten() - self.src_col.flatten()))
+
+        elif self.eq_type == 'allencahn_1d':
+
+            eq_gap = jnp.sum(jnp.square(u_xx.flatten() +
+                             (u*(u**2-1)).flatten() - self.src_col.flatten()))
+
+        else:
+            raise NotImplementedError
+
+        return boundary_gap, eq_gap
+
+    @partial(jit, static_argnums=(0, ))
+    def loss(self, params, key):
+        '''compute the loss function'''
+        u = params['u']  # function values at the collocation points
+        log_tau = params['log_tau']
+        log_v = params['log_v']
+
+        K, Kinv_u, u_xx = self.value_and_grad_kernel(params, key)
+
+        boundary_gap, eq_gap = self.boundary_and_eq_gap(u, u_xx)
+
+        # prior
+        log_prior = -0.5 * \
+            jnp.linalg.slogdet(
+                K)[1]*self.trick_paras['logdet'] - 0.5*jnp.sum(u*Kinv_u)
+
+        # boundary
+        log_boundary_ll = 0.5 * self.N * log_tau - 0.5 * \
+            jnp.exp(
+                log_tau) * boundary_gap
+        # equation
+
         eq_ll = 0.5 * self.N_con * log_v - 0.5 * \
-            jnp.exp(log_v) * \
-            jnp.sum(jnp.square(u_xx.flatten() - self.src_col.flatten()))
+            jnp.exp(log_v) * eq_gap
 
         log_joint = log_prior + log_boundary_ll * self.llk_weight + eq_ll
         return -log_joint
+
+    @partial(jit, static_argnums=(0, ))
+    def step(self, params, opt_state, key):
+        # loss = self.loss(params, key)
+        loss, d_params = jax.value_and_grad(self.loss)(params, key)
+        updates, opt_state = self.optimizer.update(d_params, opt_state, params)
+
+        params = optax.apply_updates(params, updates)
+        return params, opt_state, loss
+
+    @partial(jit, static_argnums=(0, ))
+    def preds(self, params, Xte):
+        ker_paras = params['kernel_paras']
+        u = params['u']
+
+        x_p = jnp.tile(self.X_con.flatten(), (self.N_con, 1)).T
+        X1_p = x_p.flatten()
+        X2_p = jnp.transpose(x_p).flatten()
+        K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, ker_paras)
+        Kinv_u = jnp.linalg.solve(K, u)
+
+        N_te = Xte.shape[0]
+        x_p11 = jnp.tile(Xte.flatten(), (self.N_con, 1)).T
+        x_p22 = jnp.tile(self.X_con.flatten(), (N_te, 1)).T
+        X1_p2 = x_p11.flatten()
+        X2_p2 = jnp.transpose(x_p22).flatten()
+        Kmn = vmap(self.cov_func.kappa,
+                   (0, 0, None))(X1_p2.flatten(), X2_p2.flatten(),
+                                 ker_paras).reshape(N_te, self.N_con)
+        preds = jnp.matmul(Kmn, Kinv_u)
+        return preds, K
+
+    def train(self, nepoch):
+        key = jax.random.PRNGKey(0)
+        Q = self.trick_paras['Q']  # number of basis functions
+
+        freq_scale = self.trick_paras['freq_scale']
+
+        params = {
+            "log_tau": 0.0,  # inv var for data ll
+            "log_v": 0.0,  # inv var for eq likelihood
+            "kernel_paras": {
+                'log-w': np.log(1 / Q) * np.ones(Q),
+                'log-ls': np.zeros(Q),
+                'freq': np.linspace(0, 1, Q) * freq_scale,
+            },
+            # u value on the collocation points
+            "u": np.zeros((self.N_con, 1))
+        }
+
+        # params['kernel_paras']['freq'][0] = 0.5
+
+        opt_state = self.optimizer.init(params)
+
+        loss_list = []
+        err_list = []
+        w_list = []
+        freq_list = []
+
+        ls_list = []
+        epoch_list = []
+
+        min_err = 2.0
+        threshold = 1e-5
+        print("here")
+
+        self.pred_func = self.preds
+
+        # to be assigned later
+        opt_state_extra = None
+        params_extra = None
+
+        # for i in tqdm.tqdm(range(nepoch)):
+
+        change_point = int(nepoch * self.trick_paras['change_point'])
+
+        for i in range(nepoch):
+
+            key, sub_key = jax.random.split(key)
+
+            if i <= change_point:
+                params, opt_state, loss = self.step(params, opt_state, sub_key)
+
+            else:
+                params_extra, opt_state_extra, loss = self.step_extra(
+                    params_extra, opt_state_extra, sub_key)
+
+            if i == change_point:
+
+                print('start to train the matern kernel')
+
+                self.params = copy.deepcopy(params)
+
+                params_extra = {
+                    # "log_tau": 0.0,  # inv var for data ll
+                    # "log_v": 0.0,  # inv var for eq likelihood
+                    "log_tau":
+                    copy.deepcopy(params['log_tau']),  # inv var for data ll
+                    "log_v": 0.0,  # inv var for eq likelihood
+                    "kernel_paras": {
+                        'log-w-matern': np.zeros(1),
+                        'log-ls-matern': np.zeros(1),
+                    },
+                    # u value on the collocation points
+                    # "u": copy.deepcopy(params['u']),
+                    "u": self.trick_paras['init_u_trick'](self,
+                                                          self.trick_paras)
+                }
+
+                self.pred_func = self.preds_extra
+
+                opt_state_extra = self.optimizer_extra.init(params_extra)
+
+            # evluating the error with frequency epoch/20, store the loss and error in a list
+
+            if i % (nepoch / 20) == 0:
+
+                # params = params if i <= int(nepoch / 2) else params_extra
+                current_params = params if i <= int(
+                    change_point) else params_extra
+                preds, _ = self.pred_func(current_params, self.Xte)
+                err = jnp.linalg.norm(
+                    preds.reshape(-1) -
+                    self.yte.reshape(-1)) / jnp.linalg.norm(
+                        self.yte.reshape(-1))
+                if True or err < min_err:
+                    if err < min_err:
+                        min_err = err
+                    print('loss = %g' % loss)
+                    print("It ", i, '  loss = %g ' % loss,
+                          " Relative L2 error", err)
+
+                loss_list.append(np.log(loss) if loss > 1 else loss)
+                err_list.append(err)
+                w_list.append(np.exp(params['kernel_paras']['log-w']))
+                freq_list.append(params['kernel_paras']['freq'])
+                ls_list.append(np.exp(params['kernel_paras']['log-ls']))
+
+                matern_w_list.append(
+                    np.exp(current_params['kernel_paras']['log-w-matern']))
+
+                matern_ls_list.append(
+                    np.exp(current_params['kernel_paras']['log-ls-matern']))
+
+                epoch_list.append(i)
+
+                if i > 0 and err < threshold:
+                    print(
+                        'get thr of relative l2 loss:  %f,  early stop at epoch %d'
+                        % (threshold, i))
+                    break
+
+        log_dict = {
+            'loss_list': loss_list,
+            'err_list': err_list,
+            'w_list': w_list,
+            'freq_list': freq_list,
+            'ls_list': ls_list,
+            'epoch_list': epoch_list,
+            'matern_w_list': matern_w_list,
+            'matern_ls_list': matern_ls_list,
+        }
+
+        print('gen fig ...')
+        # other_paras = '-extra-GP'
+        other_paras = self.trick_paras[
+            'other_paras'] + '-change_point-%.2f' % self.trick_paras[
+                'change_point']
+        utils.make_fig_1d_extra_GP(self, params_extra, log_dict, other_paras)
+
+
+'''GP solver for 1d equation with a extra GP, which can accelerate the convergence by capturing the low frequency part of the solution quickly'''
+
+
+class GP_solver_1d_extra(GP_solver_1d_single):
+
+    def __init__(self, Xind, y, X_col, src_col, jitter, X_test, Y_test, trick_paras=None, fix_dict=None):
+        super().__init__(Xind, y, X_col, src_col, jitter,
+                         X_test, Y_test, trick_paras, fix_dict)
+
+        print('using extra GP with kernel:',
+              self.cov_func_extra.__class__.__name__)
+
+        self.cov_func_extra = trick_paras['kernel_extra']()
+        self.kernel_matrix_extra = Kernel_matrix(self.jitter,
+                                                 self.cov_func_extra)
+        self.optimizer_extra = optax.adam(learning_rate=trick_paras['lr'])
 
     @partial(jit, static_argnums=(0, ))
     def loss_extra(self, params_extra, key):
@@ -166,15 +387,6 @@ class GPRLatent:
         return -log_joint
 
     @partial(jit, static_argnums=(0, ))
-    def step(self, params, opt_state, key):
-        # loss = self.loss(params, key)
-        loss, d_params = jax.value_and_grad(self.loss)(params, key)
-        updates, opt_state = self.optimizer.update(d_params, opt_state, params)
-
-        params = optax.apply_updates(params, updates)
-        return params, opt_state, loss
-
-    @partial(jit, static_argnums=(0, ))
     def step_extra(self, params_extra, opt_state, key):
         # loss = self.loss_extra(params_extra, key)
         loss, d_params = jax.value_and_grad(self.loss_extra)(params_extra, key)
@@ -183,30 +395,6 @@ class GPRLatent:
 
         params_extra = optax.apply_updates(params_extra, updates)
         return params_extra, opt_state, loss
-
-    @partial(jit, static_argnums=(0, ))
-    def preds(self, params, Xte):
-        ker_paras = params['kernel_paras']
-        u = params['u']
-
-        u = u.sum(axis=1).reshape(-1, 1)  # sum over trick
-
-        x_p = jnp.tile(self.X_con.flatten(), (self.N_con, 1)).T
-        X1_p = x_p.flatten()
-        X2_p = jnp.transpose(x_p).flatten()
-        K = self.kernel_matrix.get_kernel_matrix(X1_p, X2_p, ker_paras)
-        Kinv_u = jnp.linalg.solve(K, u)
-
-        N_te = Xte.shape[0]
-        x_p11 = jnp.tile(Xte.flatten(), (self.N_con, 1)).T
-        x_p22 = jnp.tile(self.X_con.flatten(), (N_te, 1)).T
-        X1_p2 = x_p11.flatten()
-        X2_p2 = jnp.transpose(x_p22).flatten()
-        Kmn = vmap(self.cov_func.kappa,
-                   (0, 0, None))(X1_p2.flatten(), X2_p2.flatten(),
-                                 ker_paras).reshape(N_te, self.N_con)
-        preds = jnp.matmul(Kmn, Kinv_u)
-        return preds, K
 
     @partial(jit, static_argnums=(0, ))
     def preds_extra(self, params_extra, Xte):
@@ -384,8 +572,6 @@ class GPRLatent:
         utils.make_fig_1d_extra_GP(self, params_extra, log_dict, other_paras)
 
 
-# allen-cahn, u_xx + u(u^2 -1) = f
-# u should be the target function
 def get_source_val(u, x_vec):
     return vmap(grad(grad(u, 0), 0), (0))(x_vec)
 
